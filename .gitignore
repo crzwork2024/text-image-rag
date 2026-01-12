@@ -1,0 +1,47 @@
+# --- Python Environment ---
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+venv/
+env/
+build/
+dist/
+.vscode/
+chroma_db/
+images/
+*.json
+*.lock
+*.pth
+*.whl
+
+# --- RAG Specific (Local Data & DB) ---
+# Ignore the vector database folder
+chroma_db/
+
+# Ignore processed chunk debug files
+vector_ingest.json
+parent_store.json
+
+# --- Models (Large Files) ---
+# We ignore the local model folder because it is huge. 
+# Others should download/path it locally.
+model/
+# If you store models inside specific project folders:
+**/acge_text_embedding/
+
+# --- Documents ---
+# Usually, you keep the source .md or .pdf in git, 
+# but if they are private or huge, uncomment below:
+# *.pdf
+# *.md
+
+# --- OS & IDE ---
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# --- Logs ---
+*.log
