@@ -152,15 +152,17 @@ async def query_rag(req: QueryRequest):
     # Manual Query Embedding using the wrapper
     query_vec = embedding_wrapper.encode([req.prompt])
     
-    results = collection.query(query_embeddings=query_vec, n_results=5)
-    
+    results = collection.query(query_embeddings=query_vec, n_results=3)
+    logging.info(f"Query results: {results}")
     metadatas = results["metadatas"][0]
+    logging.info(f"Retrieved metadatas: {metadatas}")
     unique_hashes = list(dict.fromkeys([m["parent_hash"] for m in metadatas]))
     
     retrieved_sections = [parent_store.get(h, "") for h in unique_hashes]
     context_text = "\n\n---\n\n".join(retrieved_sections)
     
     prompt = f"Context:\n{context_text}\n\nQuestion: {req.prompt}"
+    logging.info(f"Constructed prompt for LLM:\n{prompt}")
     answer = _call_llm(prompt)
     
     return {"answer": answer, "sources_count": len(retrieved_sections)}
@@ -171,4 +173,12 @@ if config.STATIC_DIR.exists():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # 注意：这里第一个参数必须是 "文件名:对象名" 的字符串格式
+    # 如果你的文件名是 main.py，那么就是 "main:app"
+    uvicorn.run(
+        "main:app", 
+        host="0.0.0.0", 
+        port=8000, 
+        reload=True,
+        log_level="info"
+    )
