@@ -12,6 +12,7 @@ class Config:
     PARENT_STORE_PATH = BASE_DIR / "parent_store.json"
     CHROMA_PATH = BASE_DIR / "chroma_db"
     STATIC_DIR = BASE_DIR / "static"
+    IMAGE_DIR = BASE_DIR / "images"
     DEBUG_EXPORT_PATH = BASE_DIR / "vector_ingest.json"
     
     # --- Local Embedding Model ---
@@ -31,9 +32,10 @@ class Config:
         "You are a strict Context-Only Assistant. Answer the User Question using ONLY the provided Context.\n\n"
         "STRICT RULES:\n"
         "1. NO OUTSIDE KNOWLEDGE: If the answer isn't in the Context, say 'I do not have enough information.'\n"
-        "2. FORMATTING: Use Markdown tables for comparisons/data. Use bullet points for lists.\n"
-        "3. DIRECTNESS: Do not say 'Based on the text'. Give the answer directly and professionally.\n"
-        "4. CLEANLINESS: Ensure all Markdown syntax is valid."
+        "2. IMAGES: If the context contains relevant images (e.g., ![](images/...) and Figure titles), "
+        "you MUST include the exact image markdown and its title in your answer if it helps explain the topic.\n"
+        "3. FORMATTING: Use Markdown tables for comparisons. Use bullet points for lists.\n"
+        "4. DIRECTNESS: Do not say 'Based on the text'. Give the answer directly."
     )
 
     # --- Logging Config ---

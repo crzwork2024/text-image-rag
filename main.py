@@ -100,9 +100,15 @@ async def query_rag(req: QueryRequest):
         "sources_count": len(retrieved_sections)
     }
 
+if config.IMAGE_DIR.exists():
+    app.mount("/images", StaticFiles(directory=str(config.IMAGE_DIR)), name="images")
+    logger.info(f"Mounted image directory: {config.IMAGE_DIR}")
+
+
 if config.STATIC_DIR.exists():
     app.mount("/", StaticFiles(directory=str(config.STATIC_DIR), html=True), name="static")
-
+    logger.info(f"Mounted static frontend: {config.STATIC_DIR}")
+    
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
