@@ -1,5 +1,6 @@
 import json
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -7,112 +8,139 @@ from config import config
 from core.embeddings import embedding_engine
 from core.vector_store import vector_db
 from core.llm_client import call_llm
+from core.reranker import rerank_engine
 from ingest import run_ingestion
 
 # Setup Logging
 logging.basicConfig(level=config.LOG_LEVEL, format=config.LOG_FORMAT)
 logger = logging.getLogger("API")
 
-app = FastAPI(title="Professional RAG API")
 parent_store = {}
 
-class QueryRequest(BaseModel):
-    prompt: str
-
-@app.on_event("startup")
-def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """ 生命周期管理：初始化与资源清理 """
     global parent_store
+    logger.info("=== [系统启动] 执行初始化任务 ===")
     
     if config.PARENT_STORE_PATH.exists():
         with open(config.PARENT_STORE_PATH, "r", encoding="utf-8") as f:
             parent_store = json.load(f)
-        logger.info("Parent store loaded into memory.")
+        logger.info(f"System: 已加载父文档库，记录数: {len(parent_store)}")
 
-    if vector_db.count() == 0:
-        logger.info("Vector database is empty. Triggering initial ingestion...")
-        run_ingestion()
-        with open(config.PARENT_STORE_PATH, "r", encoding="utf-8") as f:
-            parent_store = json.load(f)
+    try:
+        if vector_db.count() == 0:
+            logger.info("System: 向量库为空，触发自动摄取流程...")
+            run_ingestion()
+            with open(config.PARENT_STORE_PATH, "r", encoding="utf-8") as f:
+                parent_store = json.load(f)
+    except Exception as e:
+        logger.error(f"System: 启动检查失败: {e}")
+
+    yield
+    logger.info("=== [系统关闭] 清理资源 ===")
+
+app = FastAPI(title="Professional RAG API", lifespan=lifespan)
+
+class QueryRequest(BaseModel):
+    prompt: str
 
 @app.post("/query")
 async def query_rag(req: QueryRequest):
-    logger.info(f"--- [新查询] 用户问题: '{req.prompt[:50]}...' ---")
+    logger.info(f"===> [新查询] 用户问题: '{req.prompt[:50]}...' <===")
     
-    # 1. 向量化
+    # --- 阶段 1: 向量召回 (K=10) ---
+    logger.info(f"步骤 1: 向量检索 (K={config.RETRIEVAL_COUNT})")
     query_vec = embedding_engine.encode([req.prompt])
-    
-    # 2. 检索 ChromaDB
     results = vector_db.query(query_vec, n_results=config.RETRIEVAL_COUNT)
     
-    distances = results.get("distances", [[]])[0]
-    metadatas = results["metadatas"][0]
-    
-    logger.info(f"检索完成，ChromaDB 返回了 {len(distances)} 条候选片段")
+    raw_docs = results["documents"][0]
+    raw_metas = results["metadatas"][0]
+    raw_dists = results["distances"][0]
 
-    # 3. 过滤逻辑与日志记录
-    filtered_hashes = []
-    score_summaries = []
+    # --- 阶段 2: 向量初筛 (附带 Hash 记录) ---
+    candidates = []
+    candidates_meta = []
+    logger.info(f"步骤 2: 向量初筛结果 (阈值: {config.VECTOR_SEARCH_THRESHOLD})")
     
-    for i, dist in enumerate(distances):
-        similarity = 1 - dist
-        similarity_pct = round(similarity * 100, 2)
+    for i in range(len(raw_docs)):
+        sim = 1 - raw_dists[i]
+        sim_pct = f"{round(sim * 100, 2)}%"
+        curr_hash = raw_metas[i].get("parent_hash", "N/A")
         
-        # 记录每条结果的分数到日志
-        logger.info(f"候选片段 {i+1}: 相似度 {similarity_pct}% (阈值: {round(config.SIMILARITY_THRESHOLD * 100)}%)")
-        
-        score_summaries.append({
-            "rank": i + 1,
-            "similarity_score": f"{similarity_pct}%"
-        })
-        
-        # 只有超过阈值才加入处理队列
-        if similarity >= config.SIMILARITY_THRESHOLD:
-            filtered_hashes.append(metadatas[i]["parent_hash"])
+        if sim >= config.VECTOR_SEARCH_THRESHOLD:
+            # 关键日志：添加 [Hash: xxx]
+            logger.info(f"  [√] 片段 #{i+1:02d}: 相似度 {sim_pct} (通过) [Hash: {curr_hash}]")
+            candidates.append(raw_docs[i])
+            candidates_meta.append(raw_metas[i])
         else:
-            logger.warning(f"  --> 片段 {i+1} 分数过低，已排除。")
+            logger.warning(f"  [×] 片段 #{i+1:02d}: 相似度 {sim_pct} (屏蔽) [Hash: {curr_hash}]")
 
-    # 4. 检查拦截条件
-    unique_hashes = list(dict.fromkeys(filtered_hashes))
-    logger.info(f"Unique Parent Hashes retrieved: {unique_hashes}")
+    if not candidates:
+        logger.error("!!! [拦截] 向量阶段无合格候选片段 !!!")
+        return {"answer": "书库中未找到相关内容。", "sources_count": 0}
+
+    # --- 阶段 3: Rerank 精排 (附带 Hash 记录) ---
+    logger.info(f"步骤 3: 启动 Rerank 精排 (输入数: {len(candidates)})")
+    rerank_results = rerank_engine.rerank(req.prompt, candidates)
+    
+    final_hashes = []
+    score_summaries = []
+
+    
+
+    if rerank_results is not None:
+        for i, res in enumerate(rerank_results):
+            idx = res["index"]
+            score = res["relevance_score"]
+            p_hash = candidates_meta[idx].get("parent_hash", "N/A")
+            
+            score_summary = {"rank": i+1, "rerank_score": f"{round(score*100, 2)}%"}
+            score_summaries.append(score_summary)
+            
+            # 关键日志：添加 [Hash: xxx]
+            logger.info(f"  [精排 {i+1}] 原始索引: {idx+1}, 得分: {score_summary['rerank_score']} [Hash: {p_hash}]")
+            
+            if score >= config.RERANK_THRESHOLD:
+                final_hashes.append(p_hash)
+            else:
+                logger.warning(f"    --> 片段 {idx} 分数过低被剔除 [Hash: {p_hash}]")
+    else:
+        logger.warning("!!! [降级] Rerank 异常，直接使用向量 Top-3 !!!")
+        final_hashes = [m["parent_hash"] for m in candidates_meta[:3]]
+        score_summaries = [{"info": "System Fallback"}]
+
+    # --- 阶段 4: 获取最终上下文 ---
+    unique_hashes = list(dict.fromkeys(final_hashes))
     retrieved_sections = [parent_store.get(h) for h in unique_hashes if parent_store.get(h)]
-
+    
     if not retrieved_sections:
-        # --- 核心拦截点：节省 Token，保护隐私，防止幻觉 ---
-        logger.error("!!! [拦截] 所有检索片段均低于阈值，不调用 LLM !!!")
-        return {
-            "answer": "抱歉，在书库中未找到与您问题相关的核心内容。请尝试使用更具体的术语，或调整您的搜索范围。", 
-            "scores": score_summaries,
-            "best_similarity": score_summaries[0]["similarity_score"] if score_summaries else "0%",
-            "sources_count": 0
-        }
+        return {"answer": "检索结果相关度不足。", "scores": score_summaries}
 
-    # 5. 调用 LLM
-    logger.info(f"找到 {len(retrieved_sections)} 条有效上下文，正在调用 LLM 生成答案...")
+    # --- 阶段 5: LLM 生成答案 ---
+    logger.info(f"步骤 4: 调用 LLM 生成答案 (上下文块数: {len(retrieved_sections)})")
     context_text = "\n\n---\n\n".join(retrieved_sections)
     
     try:
         answer = call_llm(context_text, req.prompt)
-        logger.info("LLM 响应成功。")
+        logger.info("===> [查询成功] 流程结束 <===")
     except Exception as e:
-        logger.error(f"LLM 调用失败: {e}")
-        answer = "AI 暂时无法回答，请稍后再试。"
+        logger.error(f"LLM 错误: {e}")
+        answer = "AI 助手暂时无法响应。"
 
     return {
         "answer": answer, 
         "scores": score_summaries,
-        "best_similarity": score_summaries[0]["similarity_score"],
+        "best_score": score_summaries[0].get("rerank_score", "0%") if score_summaries else "0%",
         "sources_count": len(retrieved_sections)
     }
 
+# 静态资源挂载
 if config.IMAGE_DIR.exists():
     app.mount("/images", StaticFiles(directory=str(config.IMAGE_DIR)), name="images")
-    logger.info(f"Mounted image directory: {config.IMAGE_DIR}")
-
-
 if config.STATIC_DIR.exists():
     app.mount("/", StaticFiles(directory=str(config.STATIC_DIR), html=True), name="static")
-    logger.info(f"Mounted static frontend: {config.STATIC_DIR}")
-    
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

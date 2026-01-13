@@ -22,13 +22,21 @@ class Config:
     
     # --- ChromaDB Settings ---
     CHROMA_COLLECTION_NAME = "book_rag_manual"
-    RETRIEVAL_COUNT = 3
+ 
 
     # --- LLM Settings (SiliconFlow) ---
     SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
     SILICONFLOW_MODEL_ID = os.getenv("SILICONFLOW_MODEL_ID", "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B")
     SILICONFLOW_API_URL = os.getenv("SILICONFLOW_API_URL", "https://api.siliconflow.cn/v1/chat/completions")
+    SILICONFLOW_RERANK_URL = os.getenv("SILICONFLOW_RERANK_URL", "https://api.siliconflow.cn/v1/rerank")
+    SILICONFLOW_RERANK_MODEL = os.getenv("SILICONFLOW_RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
     LLM_TEMPERATURE = 0
+    
+    # config.py 增加以下项
+    RETRIEVAL_COUNT = 10          # 向量检索初步召回数量
+    RERANK_TOP_K = 3             # 重排后保留的数量
+    RERANK_THRESHOLD = 0.01      # Rerank 分数阈值
+    VECTOR_SEARCH_THRESHOLD = 0.20      # 向量搜索阈值
     
     SYSTEM_PROMPT = (
         "You are a strict Context-Only Assistant. Answer the User Question in Chinese using ONLY the provided Context.\n\n"
