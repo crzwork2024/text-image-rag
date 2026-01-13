@@ -36,67 +36,71 @@ def startup_event():
 
 @app.post("/query")
 async def query_rag(req: QueryRequest):
-    logger.info(f"--- Processing Query: '{req.prompt[:50]}...' ---")
+    logger.info(f"--- [新查询] 用户问题: '{req.prompt[:50]}...' ---")
     
-    # 1. Embed Query
+    # 1. 向量化
     query_vec = embedding_engine.encode([req.prompt])
     
-    # 2. Retrieve from Chroma
+    # 2. 检索 ChromaDB
     results = vector_db.query(query_vec, n_results=config.RETRIEVAL_COUNT)
-    
-    # --- DEBUG LOG: Raw Query Results ---
-    # Log the IDs and distances to see how well the vector search performed
-    logger.info(f"ChromaDB found {len(results['ids'][0])} matches.")
-    logger.debug(f"Raw Search Results: {results}")
     
     distances = results.get("distances", [[]])[0]
     metadatas = results["metadatas"][0]
     
+    logger.info(f"检索完成，ChromaDB 返回了 {len(distances)} 条候选片段")
+
+    # 3. 过滤逻辑与日志记录
+    filtered_hashes = []
     score_summaries = []
+    
     for i, dist in enumerate(distances):
-        # Convert Distance to Similarity Score
-        # Cosine Similarity = 1 - Cosine Distance
-        similarity = 1 - dist 
+        similarity = 1 - dist
         similarity_pct = round(similarity * 100, 2)
         
-        summary = {
-            "rank": i + 1, 
-            "distance": round(dist, 4),
-            "similarity_score": f"{similarity_pct}%"
-        }
-        score_summaries.append(summary)
-        logger.info(f"Result {i+1}: Similarity = {similarity_pct}% (Dist: {dist:.4f})")
+        # 记录每条结果的分数到日志
+        logger.info(f"候选片段 {i+1}: 相似度 {similarity_pct}% (阈值: {round(config.SIMILARITY_THRESHOLD * 100)}%)")
         
-    # 3. Reconstruct Context
-    unique_hashes = list(dict.fromkeys([m["parent_hash"] for m in metadatas]))
-    
-    # --- DEBUG LOG: Meta Hashcodes ---
-    logger.info(f"Unique Parent Hashes retrieved: {unique_hashes}")
-    
-    retrieved_sections = []
-    for h in unique_hashes:
-        section = parent_store.get(h)
-        if section:
-            retrieved_sections.append(section)
+        score_summaries.append({
+            "rank": i + 1,
+            "similarity_score": f"{similarity_pct}%"
+        })
+        
+        # 只有超过阈值才加入处理队列
+        if similarity >= config.SIMILARITY_THRESHOLD:
+            filtered_hashes.append(metadatas[i]["parent_hash"])
         else:
-            logger.warning(f"Hash {h} not found in parent_store!")
+            logger.warning(f"  --> 片段 {i+1} 分数过低，已排除。")
 
+    # 4. 检查拦截条件
+    unique_hashes = list(dict.fromkeys(filtered_hashes))
+    logger.info(f"Unique Parent Hashes retrieved: {unique_hashes}")
+    retrieved_sections = [parent_store.get(h) for h in unique_hashes if parent_store.get(h)]
+
+    if not retrieved_sections:
+        # --- 核心拦截点：节省 Token，保护隐私，防止幻觉 ---
+        logger.error("!!! [拦截] 所有检索片段均低于阈值，不调用 LLM !!!")
+        return {
+            "answer": "抱歉，在书库中未找到与您问题相关的核心内容。请尝试使用更具体的术语，或调整您的搜索范围。", 
+            "scores": score_summaries,
+            "best_similarity": score_summaries[0]["similarity_score"] if score_summaries else "0%",
+            "sources_count": 0
+        }
+
+    # 5. 调用 LLM
+    logger.info(f"找到 {len(retrieved_sections)} 条有效上下文，正在调用 LLM 生成答案...")
     context_text = "\n\n---\n\n".join(retrieved_sections)
     
-    # --- DEBUG LOG: Final Context ---
-    # We log the length and a snippet of the context
-    logger.info(f"Final Context assembled. Total length: {len(context_text)} chars.")
-    logger.debug(f"FULL CONTEXT SENT TO LLM:\n{context_text}")
-    
-    # 4. LLM Generation
-    answer = call_llm(context_text, req.prompt)
-    
-    logger.info("--- Query Flow Complete ---")
-    
+    try:
+        answer = call_llm(context_text, req.prompt)
+        logger.info("LLM 响应成功。")
+    except Exception as e:
+        logger.error(f"LLM 调用失败: {e}")
+        answer = "AI 暂时无法回答，请稍后再试。"
+
     return {
         "answer": answer, 
         "scores": score_summaries,
-        "best_similarity": score_summaries[0]["similarity_score"] if score_summaries else "0%",
+        "best_similarity": score_summaries[0]["similarity_score"],
         "sources_count": len(retrieved_sections)
     }
 

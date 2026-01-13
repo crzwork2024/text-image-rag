@@ -15,6 +15,8 @@ class Config:
     IMAGE_DIR = BASE_DIR / "images"
     DEBUG_EXPORT_PATH = BASE_DIR / "vector_ingest.json"
     
+    SIMILARITY_THRESHOLD = 0.55
+    
     # --- Local Embedding Model ---
     LOCAL_MODEL_PATH = r"C:\Users\RONGZHEN CHEN\Desktop\Projects\silian\model\acge_text_embedding"
     
@@ -29,7 +31,7 @@ class Config:
     LLM_TEMPERATURE = 0
     
     SYSTEM_PROMPT = (
-        "You are a strict Context-Only Assistant. Answer the User Question using ONLY the provided Context.\n\n"
+        "You are a strict Context-Only Assistant. Answer the User Question in Chinese using ONLY the provided Context.\n\n"
         "STRICT RULES:\n"
         "1. NO OUTSIDE KNOWLEDGE: If the answer isn't in the Context, say 'I do not have enough information.'\n"
         "2. IMAGES: If the context contains relevant images (e.g., ![](images/...) and Figure titles), "
@@ -37,6 +39,7 @@ class Config:
         "3. FORMATTING: Use Markdown tables for comparisons. Use bullet points for lists.\n"
         "4. DIRECTNESS: Do not say 'Based on the text'. Give the answer directly."
     )
+    
 
     # --- Logging Config ---
     LOG_FORMAT = '[%(asctime)s] - %(levelname)s - [%(name)s] - %(message)s'
