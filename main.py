@@ -49,8 +49,24 @@ async def query_rag(req: QueryRequest):
     logger.info(f"ChromaDB found {len(results['ids'][0])} matches.")
     logger.debug(f"Raw Search Results: {results}")
     
+    distances = results.get("distances", [[]])[0]
     metadatas = results["metadatas"][0]
     
+    score_summaries = []
+    for i, dist in enumerate(distances):
+        # Convert Distance to Similarity Score
+        # Cosine Similarity = 1 - Cosine Distance
+        similarity = 1 - dist 
+        similarity_pct = round(similarity * 100, 2)
+        
+        summary = {
+            "rank": i + 1, 
+            "distance": round(dist, 4),
+            "similarity_score": f"{similarity_pct}%"
+        }
+        score_summaries.append(summary)
+        logger.info(f"Result {i+1}: Similarity = {similarity_pct}% (Dist: {dist:.4f})")
+        
     # 3. Reconstruct Context
     unique_hashes = list(dict.fromkeys([m["parent_hash"] for m in metadatas]))
     
@@ -79,6 +95,8 @@ async def query_rag(req: QueryRequest):
     
     return {
         "answer": answer, 
+        "scores": score_summaries,
+        "best_similarity": score_summaries[0]["similarity_score"] if score_summaries else "0%",
         "sources_count": len(retrieved_sections)
     }
 

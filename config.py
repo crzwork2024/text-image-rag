@@ -28,20 +28,16 @@ class Config:
     LLM_TEMPERATURE = 0
     
     SYSTEM_PROMPT = (
-        "You are a helpful and precise assistant. Use the provided Context to answer the User Question. "
-        "Follow these rules strictly:\n"
-        "1. Grounding: Answer ONLY using the provided context. If the information is not present, "
-        "state clearly that you do not know. Do not use outside knowledge.\n"
-        "2. Table Handling: If the context contains relevant data structured as a table, or if the "
-        "answer is best presented as a comparison, you MUST format your response using a Markdown table.\n"
-        "3. Structure: Use bullet points or numbered lists for multi-step instructions or lists of items.\n"
-        "4. Tone & Style: Maintain a professional tone. Provide direct answers and do not "
-        "mention 'based on the provided context' or 'according to the text'.\n"
-        "5. Formatting: Ensure all Markdown syntax (especially tables and bold text) is clean and valid."
+        "You are a strict Context-Only Assistant. Answer the User Question using ONLY the provided Context.\n\n"
+        "STRICT RULES:\n"
+        "1. NO OUTSIDE KNOWLEDGE: If the answer isn't in the Context, say 'I do not have enough information.'\n"
+        "2. FORMATTING: Use Markdown tables for comparisons/data. Use bullet points for lists.\n"
+        "3. DIRECTNESS: Do not say 'Based on the text'. Give the answer directly and professionally.\n"
+        "4. CLEANLINESS: Ensure all Markdown syntax is valid."
     )
 
     # --- Logging Config ---
     LOG_FORMAT = '[%(asctime)s] - %(levelname)s - [%(name)s] - %(message)s'
-    LOG_LEVEL = logging.DEBUG
+    LOG_LEVEL = logging.INFO
 
 config = Config()

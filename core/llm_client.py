@@ -1,6 +1,7 @@
 import requests
 import logging
 from config import config
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ def call_llm(context: str, user_query: str) -> str:
     
     try:
         logger.info(f"Sending request to SiliconFlow API ({config.SILICONFLOW_MODEL_ID})")
+        #logger.debug(f"RAW PAYLOAD: {json.dumps(messages, indent=2, ensure_ascii=False)}")
         resp = requests.post(config.SILICONFLOW_API_URL, headers=headers, json=payload, timeout=30)
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"].strip()

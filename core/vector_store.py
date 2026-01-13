@@ -9,7 +9,8 @@ class VectorStoreManager:
         try:
             self.client = chromadb.PersistentClient(path=str(config.CHROMA_PATH))
             self.collection = self.client.get_or_create_collection(
-                name=config.CHROMA_COLLECTION_NAME
+                name=config.CHROMA_COLLECTION_NAME,
+                metadata={"hnsw:space": "cosine"}
             )
             logger.info(f"Connected to ChromaDB at {config.CHROMA_PATH}")
         except Exception as e:
