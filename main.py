@@ -129,13 +129,35 @@ def ingest_data():
         logging.info("Ingestion complete and stored in Chroma.")
 
 # --- 4. Query Logic ---
-def _call_llm(prompt: str) -> str:
+# Define the system prompt as a constant
+SYSTEM_PROMPT = (
+    "You are a helpful and precise assistant. Use the provided Context to answer the User Question. "
+    "Follow these rules strictly:\n"
+    "1. Grounding: Answer ONLY using the provided context. If the information is not present, "
+    "state clearly that you do not know. Do not use outside knowledge.\n"
+    "2. Table Handling: If the context contains relevant data structured as a table, or if the "
+    "answer is best presented as a comparison, you MUST format your response using a Markdown table.\n"
+    "3. Structure: Use bullet points or numbered lists for multi-step instructions or lists of items.\n"
+    "4. Tone & Style: Maintain a professional tone. Provide direct answers and do not "
+    "mention 'based on the provided context' or 'according to the text'.\n"
+    "5. Formatting: Ensure all Markdown syntax (especially tables and bold text) is clean and valid."
+)
+
+def _call_llm(context: str, user_query: str) -> str:
     headers = {"Authorization": f"Bearer {config.SILICONFLOW_API_KEY}"}
+    
+    # Constructing the message list for a Chat completion
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {user_query}"}
+    ]
+    
     payload = {
         "model": config.SILICONFLOW_MODEL_ID,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.1
+        "messages": messages,
+        "temperature": 0.1  # Low temperature for factual consistency
     }
+    
     try:
         resp = requests.post(config.SILICONFLOW_API_URL, headers=headers, json=payload)
         resp.raise_for_status()
@@ -149,21 +171,18 @@ class QueryRequest(BaseModel):
 
 @app.post("/query")
 async def query_rag(req: QueryRequest):
-    # Manual Query Embedding using the wrapper
+    # Manual Query Embedding
     query_vec = embedding_wrapper.encode([req.prompt])
     
     results = collection.query(query_embeddings=query_vec, n_results=3)
-    logging.info(f"Query results: {results}")
     metadatas = results["metadatas"][0]
-    logging.info(f"Retrieved metadatas: {metadatas}")
     unique_hashes = list(dict.fromkeys([m["parent_hash"] for m in metadatas]))
     
     retrieved_sections = [parent_store.get(h, "") for h in unique_hashes]
     context_text = "\n\n---\n\n".join(retrieved_sections)
     
-    prompt = f"Context:\n{context_text}\n\nQuestion: {req.prompt}"
-    logging.info(f"Constructed prompt for LLM:\n{prompt}")
-    answer = _call_llm(prompt)
+    # Pass both arguments to the updated LLM function
+    answer = _call_llm(context_text, req.prompt)
     
     return {"answer": answer, "sources_count": len(retrieved_sections)}
 
