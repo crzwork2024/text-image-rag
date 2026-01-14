@@ -1,12 +1,23 @@
+"""
+配置模块 - RAG 智能问答系统
+作者：RAG 项目团队
+描述：集中管理所有系统配置参数，包括路径、API 配置、模型参数等
+"""
+
 import os
 import logging
 from pathlib import Path
+from typing import Optional
 from dotenv import load_dotenv
 
+# 加载环境变量
 load_dotenv()
 
+
 class Config:
-    # --- Project Paths ---
+    """系统配置类 - 管理所有配置参数"""
+
+    # ==================== 项目路径配置 ====================
     BASE_DIR = Path(__file__).resolve().parent
     MD_FILE_PATH = BASE_DIR / "book.md"
     PARENT_STORE_PATH = BASE_DIR / "parent_store.json"
@@ -14,43 +25,98 @@ class Config:
     STATIC_DIR = BASE_DIR / "static"
     IMAGE_DIR = BASE_DIR / "images"
     DEBUG_EXPORT_PATH = BASE_DIR / "vector_ingest.json"
-    
-    SIMILARITY_THRESHOLD = 0.55
-    
-    # --- Local Embedding Model ---
-    LOCAL_MODEL_PATH = r"C:\Users\RONGZHEN CHEN\Desktop\Projects\silian\model\acge_text_embedding"
-    
-    # --- ChromaDB Settings ---
-    CHROMA_COLLECTION_NAME = "book_rag_manual"
- 
+    LOG_DIR = BASE_DIR / "logs"
 
-    # --- LLM Settings (SiliconFlow) ---
-    SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
-    SILICONFLOW_MODEL_ID = os.getenv("SILICONFLOW_MODEL_ID", "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B")
-    SILICONFLOW_API_URL = os.getenv("SILICONFLOW_API_URL", "https://api.siliconflow.cn/v1/chat/completions")
-    SILICONFLOW_RERANK_URL = os.getenv("SILICONFLOW_RERANK_URL", "https://api.siliconflow.cn/v1/rerank")
-    SILICONFLOW_RERANK_MODEL = os.getenv("SILICONFLOW_RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
-    LLM_TEMPERATURE = 0
-    
-    # config.py 增加以下项
-    RETRIEVAL_COUNT = 10          # 向量检索初步召回数量
-    RERANK_TOP_K = 3             # 重排后保留的数量
-    RERANK_THRESHOLD = 0.01      # Rerank 分数阈值
-    VECTOR_SEARCH_THRESHOLD = 0.20      # 向量搜索阈值
-    
-    SYSTEM_PROMPT = (
-        "You are a strict Context-Only Assistant. Answer the User Question in Chinese using ONLY the provided Context.\n\n"
-        "STRICT RULES:\n"
-        "1. NO OUTSIDE KNOWLEDGE: If the answer isn't in the Context, say 'I do not have enough information.'\n"
-        "2. IMAGES: If the context contains relevant images (e.g., ![](images/...) and Figure titles), "
-        "you MUST include the exact image markdown and its title in your answer if it helps explain the topic.\n"
-        "3. FORMATTING: Use Markdown tables for comparisons. Use bullet points for lists.\n"
-        "4. DIRECTNESS: Do not say 'Based on the text'. Give the answer directly."
+    # ==================== 本地嵌入模型配置 ====================
+    LOCAL_MODEL_PATH = os.getenv(
+        "LOCAL_EMBEDDING_MODEL_PATH",
+        str(BASE_DIR / "models" / "acge_text_embedding")
     )
-    
 
-    # --- Logging Config ---
+    # ==================== 向量数据库配置 ====================
+    CHROMA_COLLECTION_NAME = "book_rag_manual"
+
+    # ==================== LLM API 配置（SiliconFlow）====================
+    SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
+    SILICONFLOW_MODEL_ID = os.getenv(
+        "SILICONFLOW_MODEL_ID",
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
+    )
+    SILICONFLOW_API_URL = os.getenv(
+        "SILICONFLOW_API_URL",
+        "https://api.siliconflow.cn/v1/chat/completions"
+    )
+    SILICONFLOW_RERANK_URL = os.getenv(
+        "SILICONFLOW_RERANK_URL",
+        "https://api.siliconflow.cn/v1/rerank"
+    )
+    SILICONFLOW_RERANK_MODEL = os.getenv(
+        "SILICONFLOW_RERANK_MODEL",
+        "BAAI/bge-reranker-v2-m3"
+    )
+    LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0"))
+
+    # ==================== 检索参数配置 ====================
+    RETRIEVAL_COUNT = int(os.getenv("RETRIEVAL_COUNT", "10"))        # 向量检索初步召回数量
+    RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "3"))              # 重排后保留的数量
+    RERANK_THRESHOLD = float(os.getenv("RERANK_THRESHOLD", "0.01")) # Rerank 分数阈值
+    VECTOR_SEARCH_THRESHOLD = float(os.getenv("VECTOR_SEARCH_THRESHOLD", "0.20"))  # 向量搜索阈值
+    SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.55"))        # 相似度阈值
+
+    # ==================== 系统提示词配置 ====================
+    SYSTEM_PROMPT = (
+        "你是一个严格基于上下文的智能助手。请仅使用提供的上下文内容回答用户问题。\n\n"
+        "严格规则：\n"
+        "1. 禁止使用外部知识：如果答案不在上下文中，请回答'我没有足够的信息来回答这个问题。'\n"
+        "2. 图片引用：如果上下文包含相关图片（例如 ![](images/...) 和图片标题），"
+        "你必须在回答中包含准确的图片 markdown 和标题（如果有助于解释主题）。\n"
+        "3. 格式化：使用 Markdown 表格进行比较，使用项目符号列出列表。\n"
+        "4. 直接回答：不要说'根据文本'之类的话，直接给出答案。"
+    )
+
+    # ==================== 应用服务配置 ====================
+    APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
+    APP_PORT = int(os.getenv("APP_PORT", "8000"))
+    APP_RELOAD = os.getenv("APP_RELOAD", "True").lower() == "true"
+
+    # ==================== 日志配置 ====================
     LOG_FORMAT = '[%(asctime)s] - %(levelname)s - [%(name)s] - %(message)s'
-    LOG_LEVEL = logging.INFO
+    LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper())
 
+    @classmethod
+    def validate(cls) -> bool:
+        """验证配置的有效性"""
+        errors = []
+
+        # 检查必需的 API 密钥
+        if not cls.SILICONFLOW_API_KEY:
+            errors.append("缺少 SILICONFLOW_API_KEY 环境变量")
+
+        # 检查模型路径
+        if not Path(cls.LOCAL_MODEL_PATH).exists():
+            errors.append(f"本地嵌入模型路径不存在: {cls.LOCAL_MODEL_PATH}")
+
+        # 打印错误并返回结果
+        if errors:
+            for error in errors:
+                logging.error(f"配置验证失败: {error}")
+            return False
+
+        return True
+
+    @classmethod
+    def create_directories(cls):
+        """创建必要的目录"""
+        directories = [
+            cls.CHROMA_PATH,
+            cls.IMAGE_DIR,
+            cls.LOG_DIR,
+        ]
+
+        for directory in directories:
+            directory.mkdir(parents=True, exist_ok=True)
+            logging.info(f"确保目录存在: {directory}")
+
+
+# 全局配置实例
 config = Config()
