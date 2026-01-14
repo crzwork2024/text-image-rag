@@ -48,6 +48,8 @@ cl100k_base.tiktoken
 chroma_db/
 *.db
 *.sqlite
+redis-data/
+
 
 # 数据文件
 *.json

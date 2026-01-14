@@ -83,6 +83,20 @@ class Config:
     QUERY_ENHANCEMENT_WEIGHT = float(os.getenv("QUERY_ENHANCEMENT_WEIGHT", "0.6"))  # 原问题权重
     # 关键词权重 = 1 - QUERY_ENHANCEMENT_WEIGHT
 
+    # ==================== Redis 缓存配置 ====================
+    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
+    REDIS_DB = int(os.getenv("REDIS_DB", "0"))
+
+    # 语义缓存阈值
+    CACHE_THRESHOLD_DIRECT = float(os.getenv("CACHE_THRESHOLD_DIRECT", "0.98"))   # 相似度 >= 此值时直接返回缓存
+    CACHE_THRESHOLD_CONFIRM = float(os.getenv("CACHE_THRESHOLD_CONFIRM", "0.95")) # 相似度 >= 此值时提示用户确认
+
+    # 缓存配置
+    CACHE_TTL = int(os.getenv("CACHE_TTL", "3600"))              # 缓存过期时间（秒），默认1小时
+    CACHE_MAX_SIZE = int(os.getenv("CACHE_MAX_SIZE", "1000"))   # 最大缓存条目数，超过后 LRU 淘汰
+
     # ==================== 系统提示词配置 ====================
     SYSTEM_PROMPT = (
         "你是一个严格基于上下文的智能助手。请仅使用提供的上下文内容回答用户问题。\n\n"

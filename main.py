@@ -6,6 +6,7 @@
 
 import json
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -20,6 +21,7 @@ from core.vector_store import vector_db
 from core.llm_client import call_llm
 from core.reranker import rerank_engine
 from core.query_enhancer import query_enhancer
+from core.semantic_cache import SemanticCache
 from ingest import run_ingestion
 from utils.logger import setup_logger
 from utils.responses import QueryResponse, error_response
@@ -36,12 +38,22 @@ logger = setup_logger(
 # 全局变量：父节点存储映射
 parent_store = {}
 
+# 全局变量：语义缓存
+semantic_cache = None
+
 
 class QueryRequest(BaseModel):
     """查询请求模型"""
     prompt: str = Field(..., description="用户问题", min_length=1, max_length=1000)
     use_rerank: bool = Field(True, description="是否使用重排优化")
     use_query_enhancement: bool = Field(False, description="是否使用查询增强（HyDE）")
+    session_id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="会话ID")
+
+
+class CacheConfirmRequest(BaseModel):
+    """缓存确认请求模型"""
+    confirmation_id: str = Field(..., description="确认ID")
+    user_confirmed: bool = Field(..., description="用户是否确认使用缓存")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -55,7 +67,7 @@ async def lifespan(app: FastAPI):
     关闭时:
     - 清理资源
     """
-    global parent_store
+    global parent_store, semantic_cache
 
     logger.info("=" * 60)
     logger.info("系统启动中...")
@@ -64,6 +76,14 @@ async def lifespan(app: FastAPI):
     try:
         # 创建必要的目录
         config.create_directories()
+
+        # 初始化语义缓存
+        logger.info("初始化语义缓存...")
+        semantic_cache = SemanticCache(embedding_engine)
+        if semantic_cache.is_available():
+            logger.info("✓ 语义缓存已启用")
+        else:
+            logger.warning("⚠️ 语义缓存不可用（Redis连接失败），将跳过缓存功能")
 
         # 加载父节点映射
         if config.PARENT_STORE_PATH.exists():
@@ -152,6 +172,56 @@ async def query_rag(req: QueryRequest):
     logger.info("=" * 60)
 
     try:
+        # #region agent log - cache check entry
+        import json
+        from datetime import datetime
+        try:
+            with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H1,H2","location":"main.py:176","message":"缓存查询入口","data":{"semantic_cache_is_none":semantic_cache is None,"is_available":semantic_cache.is_available() if semantic_cache else False,"prompt":req.prompt[:50]},"timestamp":datetime.now().timestamp()*1000}) + '\n')
+        except: pass
+        # #endregion
+
+        # ==================== 步骤 0: 语义缓存查询 ====================
+        if semantic_cache and semantic_cache.is_available():
+            logger.info("步骤 0: 查询语义缓存")
+            cache_result = await semantic_cache.query(req.prompt, req.session_id)
+
+            # #region agent log - cache query result
+            try:
+                with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H3","location":"main.py:179","message":"缓存查询结果","data":{"status":cache_result.get("status"),"similarity":cache_result.get("similarity",0),"has_answer":"answer" in cache_result},"timestamp":datetime.now().timestamp()*1000}) + '\n')
+            except: pass
+            # #endregion
+
+            if cache_result["status"] == "hit":
+                # 缓存直接命中
+                logger.info("⚡ 缓存直接命中，返回缓存答案")
+                return QueryResponse(
+                    answer=cache_result["answer"],
+                    best_score=f"{cache_result['similarity']:.2%}",
+                    sources_count=0,
+                    metadata={
+                        "from_cache": True,
+                        "cache_type": "direct_hit",
+                        "cached_question": cache_result["cached_question"],
+                        "similarity": f"{cache_result['similarity']:.2%}"
+                    }
+                )
+
+            elif cache_result["status"] == "pending_confirm":
+                # 需要用户确认
+                logger.info("⏸️ 发现相似问题，等待用户确认")
+                return {
+                    "need_confirmation": True,
+                    "cached_question": cache_result["cached_question"],
+                    "similarity": f"{cache_result['similarity']:.2%}",
+                    "confirmation_id": cache_result["confirmation_id"],
+                    "message": "发现相似问题，是否使用缓存答案？"
+                }
+
+            # cache_result["status"] == "miss" → 继续正常流程
+            logger.info("🔄 缓存未命中，执行完整检索流程")
+
         # ==================== 步骤 1: 查询增强（可选）====================
         enhanced_query = None
         if req.use_query_enhancement and query_enhancer.is_available():
@@ -416,6 +486,28 @@ async def query_rag(req: QueryRequest):
             logger.error(f"LLM 生成失败: {e.message}")
             answer = "抱歉，AI 生成回答时出现错误，请稍后重试。"
 
+        # ==================== 添加到缓存 ====================
+        if semantic_cache and semantic_cache.is_available():
+            logger.info("💾 添加答案到语义缓存")
+
+            # #region agent log - before cache set
+            import json
+            from datetime import datetime
+            try:
+                with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H4","location":"main.py:476","message":"准备存储到缓存","data":{"prompt":req.prompt[:50],"answer_length":len(answer)},"timestamp":datetime.now().timestamp()*1000}) + '\n')
+            except: pass
+            # #endregion
+
+            semantic_cache.set(req.prompt, answer)
+
+            # #region agent log - after cache set
+            try:
+                with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H4","location":"main.py:477","message":"缓存存储完成","data":{"success":True},"timestamp":datetime.now().timestamp()*1000}) + '\n')
+            except: pass
+            # #endregion
+
         # ==================== 返回结果 ====================
         logger.info("=" * 60)
         logger.info("[查询完成]")
@@ -438,13 +530,101 @@ async def query_rag(req: QueryRequest):
             )
         )
 
+@app.post("/cache/confirm")
+async def confirm_cache(req: CacheConfirmRequest):
+    """
+    处理用户的缓存确认
+
+    参数:
+        req: 确认请求，包含确认ID和用户决定
+
+    返回:
+        如果用户确认，返回缓存答案；否则提示重新查询
+    """
+    if not semantic_cache or not semantic_cache.is_available():
+        raise HTTPException(status_code=503, detail="缓存服务不可用")
+
+    cached_answer = await semantic_cache.confirm_cache(
+        req.confirmation_id,
+        req.user_confirmed
+    )
+
+    if req.user_confirmed and cached_answer:
+        # 用户确认使用缓存
+        return {
+            "answer": cached_answer,
+            "from_cache": True,
+            "best_score": "95%+",
+            "sources_count": 0,
+            "message": "已使用缓存答案"
+        }
+    else:
+        # 用户拒绝或确认ID过期 → 需要前端重新发起查询
+        return {
+            "need_requery": True,
+            "message": "请重新提问以获取新答案"
+        }
+
+
+@app.get("/cache/popular")
+async def get_popular_questions():
+    """
+    获取热门问题（供前端显示）
+
+    返回:
+        热门问题列表，包含问题、访问次数、相似问题数
+    """
+    # #region agent log - popular questions query
+    import json
+    from datetime import datetime
+    try:
+        with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H6","location":"main.py:569","message":"热门问题查询","data":{"cache_available":semantic_cache and semantic_cache.is_available()},"timestamp":datetime.now().timestamp()*1000}) + '\n')
+    except: pass
+    # #endregion
+
+    if not semantic_cache or not semantic_cache.is_available():
+        return {"popular_questions": []}
+
+    popular_questions = semantic_cache.get_popular_questions(3)
+
+    # #region agent log - popular questions result
+    try:
+        with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H6","location":"main.py:580","message":"热门问题结果","data":{"count":len(popular_questions),"questions":[q.get('question','')[:30] for q in popular_questions[:3]]},"timestamp":datetime.now().timestamp()*1000}) + '\n')
+    except: pass
+    # #endregion
+
+    return {"popular_questions": popular_questions}
+
+
+@app.get("/cache/stats")
+async def get_cache_stats():
+    """
+    获取缓存统计信息
+
+    返回:
+        缓存统计数据，包含缓存条目数、命中次数等
+    """
+    if not semantic_cache or not semantic_cache.is_available():
+        return {
+            "available": False,
+            "message": "缓存服务不可用"
+        }
+
+    stats = semantic_cache.get_cache_stats()
+    return stats
+
+
 @app.get("/health")
 async def health_check():
     """健康检查接口"""
+    cache_available = semantic_cache and semantic_cache.is_available()
     return {
         "status": "healthy",
         "vector_db_docs": vector_db.count(),
-        "parent_store_size": len(parent_store)
+        "parent_store_size": len(parent_store),
+        "cache_available": cache_available
     }
 
 
