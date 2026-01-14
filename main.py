@@ -159,20 +159,27 @@ async def query_rag(req: QueryRequest):
         # ==================== 步骤 2: 向量初筛 ====================
         logger.info(f"步骤 2/5: 向量初筛 (阈值: {config.VECTOR_SEARCH_THRESHOLD})")
 
+        # Debug模式：显示前10个候选的相似度分数和父Hash
+        if config.LOG_LEVEL <= logging.DEBUG:
+            logger.debug("=" * 60)
+            logger.debug("【向量检索】前10个候选（按相似度排序）:")
+            for i in range(min(10, len(raw_docs))):
+                sim = 1 - raw_dists[i]
+                sim_pct = f"{round(sim * 100, 2)}%"
+                h = raw_metas[i].get("parent_hash", "N/A")
+                logger.debug(f"  [{i+1:2d}] 相似度: {sim_pct:>7s} | 父Hash: {h[:16]}...")
+            logger.debug("=" * 60)
+
         candidates = []
         candidates_meta = []
 
         for i in range(len(raw_docs)):
             sim = 1 - raw_dists[i]
-            sim_pct = f"{round(sim * 100, 2)}%"
             h = raw_metas[i].get("parent_hash", "N/A")
 
             if sim >= config.VECTOR_SEARCH_THRESHOLD:
-                logger.debug(f"  [✓] 片段 #{i+1:02d}: {sim_pct} (通过) [Hash: {h[:8]}...]")
                 candidates.append(raw_docs[i])
                 candidates_meta.append(raw_metas[i])
-            else:
-                logger.debug(f"  [✗] 片段 #{i+1:02d}: {sim_pct} (过滤) [Hash: {h[:8]}...]")
 
         logger.info(f"✓ 筛选后剩余 {len(candidates)} 个候选文档")
 
@@ -195,22 +202,31 @@ async def query_rag(req: QueryRequest):
             rerank_data = rerank_engine.rerank(req.prompt, candidates)
 
             if rerank_data:
+                # Debug模式：显示所有精排结果的Hash
+                if config.LOG_LEVEL <= logging.DEBUG:
+                    logger.debug("=" * 60)
+                    logger.debug("【精排结果】按相关度排序:")
+
                 for i, res in enumerate(rerank_data):
                     orig_idx = res["index"]
                     score = res["relevance_score"]
                     p_hash = candidates_meta[orig_idx].get("parent_hash", "N/A")
 
                     score_pct = f"{round(score * 100, 2)}%"
-                    logger.debug(
-                        f"  [排名 {i+1}] 原索引 #{orig_idx+1:02d}, "
-                        f"分数: {score_pct} [Hash: {p_hash[:8]}...]"
-                    )
-
-                    score_summaries.append({"rank": i+1, "rerank_score": score_pct})
 
                     # 根据阈值过滤
                     if score >= config.RERANK_THRESHOLD:
+                        if config.LOG_LEVEL <= logging.DEBUG:
+                            logger.debug(f"  [✓ {i+1:2d}] 分数: {score_pct:>7s} | 父Hash: {p_hash[:16]}... (已选入)")
                         final_hashes.append(p_hash)
+                    else:
+                        if config.LOG_LEVEL <= logging.DEBUG:
+                            logger.debug(f"  [✗ {i+1:2d}] 分数: {score_pct:>7s} | 父Hash: {p_hash[:16]}... (未达阈值)")
+
+                    score_summaries.append({"rank": i+1, "rerank_score": score_pct})
+
+                if config.LOG_LEVEL <= logging.DEBUG:
+                    logger.debug("=" * 60)
 
                 logger.info(f"✓ 精排完成，保留 {len(final_hashes)} 个高相关文档")
             else:
@@ -221,15 +237,24 @@ async def query_rag(req: QueryRequest):
         if not req.use_rerank or not rerank_engine.is_available():
             logger.info(f"步骤 3/5: 直取模式，选择前 {config.RERANK_TOP_K} 名")
 
+            # Debug模式：显示直取的Hash列表
+            if config.LOG_LEVEL <= logging.DEBUG:
+                logger.debug("=" * 60)
+                logger.debug("【直取模式】按向量相似度排序:")
+
             for i in range(min(config.RERANK_TOP_K, len(candidates_meta))):
                 p_hash = candidates_meta[i].get("parent_hash", "N/A")
                 sim = 1 - raw_dists[i]
                 score_pct = f"{round(sim * 100, 2)}%"
 
-                logger.debug(f"  [采用 {i+1}] 相似度: {score_pct} [Hash: {p_hash[:8]}...]")
+                if config.LOG_LEVEL <= logging.DEBUG:
+                    logger.debug(f"  [✓ {i+1}] 相似度: {score_pct:>7s} | 父Hash: {p_hash[:16]}...")
 
                 final_hashes.append(p_hash)
                 score_summaries.append({"rank": i+1, "rerank_score": score_pct})
+
+            if config.LOG_LEVEL <= logging.DEBUG:
+                logger.debug("=" * 60)
 
             logger.info(f"✓ 直取 {len(final_hashes)} 个文档")
 
@@ -237,6 +262,12 @@ async def query_rag(req: QueryRequest):
         logger.info("步骤 4/5: 组装上下文")
 
         unique_hashes = list(dict.fromkeys(final_hashes))
+
+        # 记录所有最终选定的父hash
+        logger.info(f"最终选定的父Hash列表 (共 {len(unique_hashes)} 个):")
+        for idx, h in enumerate(unique_hashes, 1):
+            logger.info(f"  [{idx}] Hash: {h}")
+
         retrieved_sections = [
             parent_store.get(h) for h in unique_hashes
             if parent_store.get(h)
@@ -256,7 +287,8 @@ async def query_rag(req: QueryRequest):
         logger.info("步骤 5/5: LLM 生成回答")
 
         context = "\n\n---\n\n".join(retrieved_sections)
-        logger.debug(f"上下文总长度: {len(context)} 字符")
+        logger.info(f"上下文总长度: {len(context)} 字符")
+        logger.info(f"传给LLM的父节点数量: {len(retrieved_sections)}")
 
         try:
             answer = call_llm(context, req.prompt)
