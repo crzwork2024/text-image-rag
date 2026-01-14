@@ -60,8 +60,18 @@ class Config:
     RETRIEVAL_COUNT = int(os.getenv("RETRIEVAL_COUNT", "10"))        # 向量检索初步召回数量
     RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "3"))              # 重排后保留的数量
     RERANK_THRESHOLD = float(os.getenv("RERANK_THRESHOLD", "0.01")) # Rerank 分数阈值
-    VECTOR_SEARCH_THRESHOLD = float(os.getenv("VECTOR_SEARCH_THRESHOLD", "0.20"))  # 向量搜索阈值
-    SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.55"))        # 相似度阈值
+
+    # 向量搜索阈值（不同模式使用不同阈值）
+    VECTOR_SEARCH_THRESHOLD_WITH_RERANK = float(os.getenv("VECTOR_SEARCH_THRESHOLD_WITH_RERANK", "0.20"))  # 精排模式：宽松（有Rerank二次过滤）
+    VECTOR_SEARCH_THRESHOLD_WITHOUT_RERANK = float(os.getenv("VECTOR_SEARCH_THRESHOLD_WITHOUT_RERANK", "0.50"))  # 直取模式：严格（直接决定质量）
+
+    # 向量搜索阈值（向后兼容，优先级最低）
+    VECTOR_SEARCH_THRESHOLD = float(os.getenv("VECTOR_SEARCH_THRESHOLD", "0.20"))
+    SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.55"))  # 已弃用，保留兼容性
+
+    # ==================== 查询增强配置 ====================
+    QUERY_ENHANCEMENT_WEIGHT = float(os.getenv("QUERY_ENHANCEMENT_WEIGHT", "0.6"))  # 原问题权重
+    # 关键词权重 = 1 - QUERY_ENHANCEMENT_WEIGHT
 
     # ==================== 系统提示词配置 ====================
     SYSTEM_PROMPT = (

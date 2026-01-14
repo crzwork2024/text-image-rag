@@ -31,7 +31,8 @@ class LLMClient:
         context: str,
         user_query: str,
         system_prompt: Optional[str] = None,
-        temperature: Optional[float] = None
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None
     ) -> str:
         """
         生成回答
@@ -41,6 +42,7 @@ class LLMClient:
             user_query: 用户问题
             system_prompt: 系统提示词，默认使用配置值
             temperature: 温度参数，默认使用配置值
+            max_tokens: 最大生成token数，默认不限制
 
         返回:
             生成的回答文本
@@ -71,6 +73,10 @@ class LLMClient:
             "messages": messages,
             "temperature": temperature
         }
+
+        # 如果指定了max_tokens，添加到payload
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",

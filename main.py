@@ -19,6 +19,7 @@ from core.embeddings import embedding_engine
 from core.vector_store import vector_db
 from core.llm_client import call_llm
 from core.reranker import rerank_engine
+from core.query_enhancer import query_enhancer
 from ingest import run_ingestion
 from utils.logger import setup_logger
 from utils.responses import QueryResponse, error_response
@@ -40,6 +41,7 @@ class QueryRequest(BaseModel):
     """查询请求模型"""
     prompt: str = Field(..., description="用户问题", min_length=1, max_length=1000)
     use_rerank: bool = Field(True, description="是否使用重排优化")
+    use_query_enhancement: bool = Field(False, description="是否使用查询增强（HyDE）")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -137,38 +139,148 @@ async def query_rag(req: QueryRequest):
     返回:
         QueryResponse: 包含答案、最高分数、来源数量
     """
-    mode = "精排模式" if req.use_rerank else "直取模式"
+    # 构建模式标识
+    modes = []
+    if req.use_query_enhancement:
+        modes.append("查询增强")
+    modes.append("精排模式" if req.use_rerank else "直取模式")
+    mode_str = " + ".join(modes)
+
     logger.info("=" * 60)
-    logger.info(f"[新查询] {mode}")
+    logger.info(f"[新查询] {mode_str}")
     logger.info(f"问题: {req.prompt[:100]}{'...' if len(req.prompt) > 100 else ''}")
     logger.info("=" * 60)
 
     try:
-        # ==================== 步骤 1: 向量检索 ====================
-        logger.info(f"步骤 1/5: 向量检索 (召回数: {config.RETRIEVAL_COUNT})")
+        # ==================== 步骤 1: 查询增强（可选）====================
+        enhanced_query = None
+        if req.use_query_enhancement and query_enhancer.is_available():
+            logger.info("步骤 1/6: 查询增强（生成假设关键词）")
+            enhanced_query = query_enhancer.generate_hypothetical_keywords(req.prompt)
 
+            if enhanced_query:
+                logger.info(f"✓ 生成关键词: {enhanced_query[:100]}...")
+            else:
+                logger.warning("✗ 查询增强失败，降级为普通检索")
+                req.use_query_enhancement = False
+
+        # ==================== 步骤 2: 向量检索 ====================
+        step_num = "2/6" if req.use_query_enhancement else "1/5"
+        logger.info(f"步骤 {step_num}: 向量检索 (召回数: {config.RETRIEVAL_COUNT})")
+
+        # 原始问题检索
         query_vec = embedding_engine.encode([req.prompt])
-        results = vector_db.query(query_vec, n_results=config.RETRIEVAL_COUNT)
+        results_query = vector_db.query(query_vec, n_results=config.RETRIEVAL_COUNT)
 
-        raw_docs = results["documents"][0]
-        raw_metas = results["metadatas"][0]
-        raw_dists = results["distances"][0]
+        raw_docs = results_query["documents"][0]
+        raw_metas = results_query["metadatas"][0]
+        raw_dists = results_query["distances"][0]
+        raw_ids = results_query["ids"][0]
 
-        logger.info(f"✓ 召回 {len(raw_docs)} 个候选文档")
+        logger.info(f"✓ 原问题召回 {len(raw_docs)} 个候选文档")
 
-        # ==================== 步骤 2: 向量初筛 ====================
-        logger.info(f"步骤 2/5: 向量初筛 (阈值: {config.VECTOR_SEARCH_THRESHOLD})")
+        # 如果启用查询增强，执行第二次检索
+        if req.use_query_enhancement and enhanced_query:
+            logger.info(f"步骤 2.5/6: 使用关键词进行二次检索")
 
-        # Debug模式：显示前10个候选的相似度分数和父Hash
-        if config.LOG_LEVEL <= logging.DEBUG:
-            logger.debug("=" * 60)
-            logger.debug("【向量检索】前10个候选（按相似度排序）:")
-            for i in range(min(10, len(raw_docs))):
+            enhanced_vec = embedding_engine.encode([enhanced_query])
+            results_enhanced = vector_db.query(enhanced_vec, n_results=config.RETRIEVAL_COUNT)
+
+            enhanced_docs = results_enhanced["documents"][0]
+            enhanced_metas = results_enhanced["metadatas"][0]
+            enhanced_dists = results_enhanced["distances"][0]
+            enhanced_ids = results_enhanced["ids"][0]
+
+            logger.info(f"✓ 关键词召回 {len(enhanced_docs)} 个候选文档")
+
+            # 融合两次检索结果 - 使用加权平均
+            logger.info("融合两次检索结果（加权融合）...")
+
+            # 构建ID到分数的映射
+            query_scores = {}
+            enhanced_scores = {}
+
+            for i, doc_id in enumerate(raw_ids):
                 sim = 1 - raw_dists[i]
-                sim_pct = f"{round(sim * 100, 2)}%"
-                h = raw_metas[i].get("parent_hash", "N/A")
-                logger.debug(f"  [{i+1:2d}] 相似度: {sim_pct:>7s} | 父Hash: {h[:16]}...")
-            logger.debug("=" * 60)
+                query_scores[doc_id] = {
+                    'similarity': sim,
+                    'doc': raw_docs[i],
+                    'meta': raw_metas[i]
+                }
+
+            for i, doc_id in enumerate(enhanced_ids):
+                sim = 1 - enhanced_dists[i]
+                enhanced_scores[doc_id] = {
+                    'similarity': sim,
+                    'doc': enhanced_docs[i],
+                    'meta': enhanced_metas[i]
+                }
+
+            # 合并并加权
+            all_doc_ids = set(query_scores.keys()) | set(enhanced_scores.keys())
+            merged_results = []
+
+            query_weight = config.QUERY_ENHANCEMENT_WEIGHT
+            enhanced_weight = 1 - query_weight
+
+            for doc_id in all_doc_ids:
+                q_sim = query_scores.get(doc_id, {}).get('similarity', 0)
+                e_sim = enhanced_scores.get(doc_id, {}).get('similarity', 0)
+
+                # 加权融合
+                final_sim = query_weight * q_sim + enhanced_weight * e_sim
+
+                # 使用原问题的文档内容（优先）
+                doc_content = query_scores.get(doc_id, {}).get('doc') or enhanced_scores.get(doc_id, {}).get('doc')
+                doc_meta = query_scores.get(doc_id, {}).get('meta') or enhanced_scores.get(doc_id, {}).get('meta')
+
+                merged_results.append({
+                    'id': doc_id,
+                    'similarity': final_sim,
+                    'distance': 1 - final_sim,
+                    'doc': doc_content,
+                    'meta': doc_meta
+                })
+
+            # 按融合后的相似度排序
+            merged_results.sort(key=lambda x: x['similarity'], reverse=True)
+
+            # 重新组织为原格式，保留前10个
+            raw_docs = [r['doc'] for r in merged_results[:10]]
+            raw_metas = [r['meta'] for r in merged_results[:10]]
+            raw_dists = [r['distance'] for r in merged_results[:10]]
+
+            logger.info(f"✓ 融合完成，保留前 10 个结果")
+
+            # 显示融合后的分数
+            logger.info("融合后的前10个结果:")
+            for i, r in enumerate(merged_results[:10], 1):
+                h = r['meta'].get('parent_hash', 'N/A')
+                logger.info(f"  [{i:2d}] 融合分数: {r['similarity']*100:>6.2f}% | 父Hash: {h[:16]}...")
+
+        # ==================== 步骤 3: 向量初筛 ====================
+        step_num = "3/6" if req.use_query_enhancement else "2/5"
+
+        # 根据是否使用精排选择不同的阈值
+        if req.use_rerank and rerank_engine.is_available():
+            threshold = config.VECTOR_SEARCH_THRESHOLD_WITH_RERANK
+            threshold_mode = "宽松(精排模式)"
+        else:
+            threshold = config.VECTOR_SEARCH_THRESHOLD_WITHOUT_RERANK
+            threshold_mode = "严格(直取模式)"
+
+        logger.info(f"步骤 {step_num}: 向量初筛 (阈值: {threshold} - {threshold_mode})")
+
+        # 显示前10个候选的相似度分数和父Hash
+        logger.info("=" * 60)
+        logger.info("【向量检索】前10个候选（按相似度排序）:")
+        for i in range(min(10, len(raw_docs))):
+            sim = 1 - raw_dists[i]
+            sim_pct = f"{round(sim * 100, 2)}%"
+            h = raw_metas[i].get("parent_hash", "N/A")
+            pass_mark = "✓" if sim >= threshold else "✗"
+            logger.info(f"  [{pass_mark}] [{i+1:2d}] 相似度: {sim_pct:>7s} | 父Hash: {h[:16]}...")
+        logger.info("=" * 60)
 
         candidates = []
         candidates_meta = []
@@ -177,7 +289,7 @@ async def query_rag(req: QueryRequest):
             sim = 1 - raw_dists[i]
             h = raw_metas[i].get("parent_hash", "N/A")
 
-            if sim >= config.VECTOR_SEARCH_THRESHOLD:
+            if sim >= threshold:
                 candidates.append(raw_docs[i])
                 candidates_meta.append(raw_metas[i])
 
@@ -195,17 +307,17 @@ async def query_rag(req: QueryRequest):
         final_hashes = []
         score_summaries = []
 
-        # ==================== 步骤 3: 重排（可选）====================
+        # ==================== 步骤 4: 重排（可选）====================
         if req.use_rerank and rerank_engine.is_available():
-            logger.info(f"步骤 3/5: 执行精排 (候选数: {len(candidates)})")
+            step_num = "4/6" if req.use_query_enhancement else "3/5"
+            logger.info(f"步骤 {step_num}: 执行精排 (候选数: {len(candidates)})")
 
             rerank_data = rerank_engine.rerank(req.prompt, candidates)
 
             if rerank_data:
-                # Debug模式：显示所有精排结果的Hash
-                if config.LOG_LEVEL <= logging.DEBUG:
-                    logger.debug("=" * 60)
-                    logger.debug("【精排结果】按相关度排序:")
+                # 显示所有精排结果
+                logger.info("=" * 60)
+                logger.info("【精排结果】按相关度排序:")
 
                 for i, res in enumerate(rerank_data):
                     orig_idx = res["index"]
@@ -216,18 +328,14 @@ async def query_rag(req: QueryRequest):
 
                     # 根据阈值过滤
                     if score >= config.RERANK_THRESHOLD:
-                        if config.LOG_LEVEL <= logging.DEBUG:
-                            logger.debug(f"  [✓ {i+1:2d}] 分数: {score_pct:>7s} | 父Hash: {p_hash[:16]}... (已选入)")
+                        logger.info(f"  [✓ {i+1:2d}] 精排分数: {score_pct:>7s} | 父Hash: {p_hash[:16]}... (已选入)")
                         final_hashes.append(p_hash)
                     else:
-                        if config.LOG_LEVEL <= logging.DEBUG:
-                            logger.debug(f"  [✗ {i+1:2d}] 分数: {score_pct:>7s} | 父Hash: {p_hash[:16]}... (未达阈值)")
+                        logger.info(f"  [✗ {i+1:2d}] 精排分数: {score_pct:>7s} | 父Hash: {p_hash[:16]}... (未达阈值)")
 
                     score_summaries.append({"rank": i+1, "rerank_score": score_pct})
 
-                if config.LOG_LEVEL <= logging.DEBUG:
-                    logger.debug("=" * 60)
-
+                logger.info("=" * 60)
                 logger.info(f"✓ 精排完成，保留 {len(final_hashes)} 个高相关文档")
             else:
                 logger.warning("精排失败，降级为直取模式")
@@ -235,31 +343,41 @@ async def query_rag(req: QueryRequest):
 
         # ==================== 步骤 4: 直取模式（备选）====================
         if not req.use_rerank or not rerank_engine.is_available():
-            logger.info(f"步骤 3/5: 直取模式，选择前 {config.RERANK_TOP_K} 名")
+            step_num = "4/6" if req.use_query_enhancement else "3/5"
+            logger.info(f"步骤 {step_num}: 直取模式，选择前 {config.RERANK_TOP_K} 名")
 
-            # Debug模式：显示直取的Hash列表
-            if config.LOG_LEVEL <= logging.DEBUG:
-                logger.debug("=" * 60)
-                logger.debug("【直取模式】按向量相似度排序:")
+            # 显示直取的结果
+            logger.info("=" * 60)
+            logger.info("【直取模式】按向量相似度排序:")
 
             for i in range(min(config.RERANK_TOP_K, len(candidates_meta))):
                 p_hash = candidates_meta[i].get("parent_hash", "N/A")
-                sim = 1 - raw_dists[i]
+                # 直取模式需要从candidates中获取，因为已经过滤了
+                # 找到这个candidate在原始列表中的位置
+                candidate_idx = i
+                for j in range(len(raw_docs)):
+                    if raw_metas[j].get("parent_hash") == p_hash:
+                        candidate_idx = j
+                        break
+
+                sim = 1 - raw_dists[candidate_idx]
                 score_pct = f"{round(sim * 100, 2)}%"
 
-                if config.LOG_LEVEL <= logging.DEBUG:
-                    logger.debug(f"  [✓ {i+1}] 相似度: {score_pct:>7s} | 父Hash: {p_hash[:16]}...")
+                logger.info(f"  [✓ {i+1}] 相似度: {score_pct:>7s} | 父Hash: {p_hash[:16]}...")
+
+                # 在直取模式下，如果相似度低于40%，给出警告
+                if sim < 0.40:
+                    logger.warning(f"  ⚠️  文档#{i+1}相似度较低({score_pct})，建议启用精排或检查问题")
 
                 final_hashes.append(p_hash)
                 score_summaries.append({"rank": i+1, "rerank_score": score_pct})
 
-            if config.LOG_LEVEL <= logging.DEBUG:
-                logger.debug("=" * 60)
-
+            logger.info("=" * 60)
             logger.info(f"✓ 直取 {len(final_hashes)} 个文档")
 
         # ==================== 步骤 5: 获取完整上下文 ====================
-        logger.info("步骤 4/5: 组装上下文")
+        step_num = "5/6" if req.use_query_enhancement else "4/5"
+        logger.info(f"步骤 {step_num}: 组装上下文")
 
         unique_hashes = list(dict.fromkeys(final_hashes))
 
@@ -284,7 +402,8 @@ async def query_rag(req: QueryRequest):
             )
 
         # ==================== 步骤 6: LLM 生成回答 ====================
-        logger.info("步骤 5/5: LLM 生成回答")
+        step_num = "6/6" if req.use_query_enhancement else "5/5"
+        logger.info(f"步骤 {step_num}: LLM 生成回答")
 
         context = "\n\n---\n\n".join(retrieved_sections)
         logger.info(f"上下文总长度: {len(context)} 字符")
