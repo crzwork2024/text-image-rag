@@ -38,10 +38,20 @@ class Config:
 
     # ==================== LLM API 配置（SiliconFlow）====================
     SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
+
+    # 主LLM模型（用于最终答案生成）
     SILICONFLOW_MODEL_ID = os.getenv(
         "SILICONFLOW_MODEL_ID",
         "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
     )
+
+    # 查询增强专用模型（用于关键词生成）
+    # 使用轻量级非推理模型，速度快且无思考过程
+    QUERY_ENHANCEMENT_MODEL_ID = os.getenv(
+        "QUERY_ENHANCEMENT_MODEL_ID",
+        "Qwen/Qwen2.5-7B-Instruct"
+    )
+
     SILICONFLOW_API_URL = os.getenv(
         "SILICONFLOW_API_URL",
         "https://api.siliconflow.cn/v1/chat/completions"

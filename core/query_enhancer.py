@@ -5,9 +5,9 @@
 """
 
 import logging
+import requests
 from typing import Optional
 from config import config
-from core.llm_client import llm_client
 from utils.exceptions import LLMAPIError
 
 logger = logging.getLogger(__name__)
@@ -18,14 +18,19 @@ class QueryEnhancer:
 
     def __init__(self):
         """初始化查询增强器"""
-        self.llm_client = llm_client
+        self.api_key = config.SILICONFLOW_API_KEY
+        self.api_url = config.SILICONFLOW_API_URL
+        self.model_id = config.QUERY_ENHANCEMENT_MODEL_ID
+
+        if not self.api_key:
+            logger.warning("未配置 SILICONFLOW_API_KEY，查询增强功能将不可用")
 
     def generate_hypothetical_keywords(self, query: str) -> Optional[str]:
         """
         基于用户问题生成假设的关键词
 
         这是HyDE (Hypothetical Document Embeddings) 技术的简化版本。
-        生成可能在答案文档中出现的关键术语，用于辅助检索。
+        使用轻量级Qwen模型快速生成关键术语，避免推理模型的思考过程。
 
         参数:
             query: 用户的原始问题
@@ -37,44 +42,106 @@ class QueryEnhancer:
             捕获所有异常，不影响主流程
         """
         try:
-            logger.info("查询增强: 开始生成假设关键词")
+            logger.info(f"查询增强: 开始生成假设关键词 (模型: {self.model_id})")
 
-            # 构建prompt - 简短高效
-            prompt = f"""请基于以下问题，生成3-5个可能出现在答案文档中的专业术语或关键短语。
-只输出关键词，用逗号分隔，不要解释，不要编号。
+            # 优化后的prompt - 针对非推理模型
+            prompt = f"""直接输出关键词，不要解释。
+
+任务：基于以下问题，生成3-5个可能出现在答案文档中的专业术语。
+格式：用逗号分隔，直接开始。
 
 问题：{query}
-
 关键词："""
 
-            # 调用LLM生成
-            response = self.llm_client.generate(
-                context="",  # 不需要上下文
-                user_query=prompt,
-                temperature=0.3,  # 较低温度保证稳定性
-                max_tokens=100    # 限制长度，降低成本
-            )
+            # 构建请求
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
 
-            keywords = response.strip()
+            payload = {
+                "model": self.model_id,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.1,  # 极低温度，保证输出稳定
+                "max_tokens": 100,   # 限制长度
+                "top_p": 0.7         # 降低随机性
+            }
+
+            # 发送请求
+            response = requests.post(
+                self.api_url,
+                json=payload,
+                headers=headers,
+                timeout=10  # 关键词生成应该很快
+            )
+            response.raise_for_status()
+
+            # 解析响应
+            result = response.json()
+            keywords = result["choices"][0]["message"]["content"].strip()
+
+            # 后处理：清理可能的思考过程和多余内容
+            keywords = self._clean_keywords(keywords)
+
             logger.info(f"查询增强: 生成关键词成功 -> {keywords}")
             return keywords
 
-        except LLMAPIError as e:
-            logger.warning(f"查询增强: LLM调用失败，跳过增强 - {e.message}")
+        except requests.exceptions.Timeout:
+            logger.warning("查询增强: API 请求超时，跳过增强")
+            return None
+
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"查询增强: HTTP 错误 {e.response.status_code}，跳过增强")
             return None
 
         except Exception as e:
             logger.warning(f"查询增强: 生成关键词失败，跳过增强 - {str(e)}")
             return None
 
+    def _clean_keywords(self, keywords: str) -> str:
+        """
+        清理关键词输出，过滤思考过程和多余内容
+
+        参数:
+            keywords: 原始输出
+
+        返回:
+            清理后的关键词
+        """
+        # 过滤可能的思考标签（如果模型还是输出了）
+        if "<think>" in keywords or "</think>" in keywords:
+            logger.warning("检测到思考过程标签，正在过滤...")
+            keywords = keywords.split("</think>")[-1].strip()
+
+        # 过滤常见的前缀
+        prefixes = ["关键词：", "关键词:", "答:", "答：", "A:", "A："]
+        for prefix in prefixes:
+            if keywords.startswith(prefix):
+                keywords = keywords[len(prefix):].strip()
+
+        # 清理多余的标点
+        keywords = keywords.replace("。", ",").replace("、", ",")
+        keywords = keywords.replace("；", ",").replace(";", ",")
+
+        # 去掉首尾的逗号和空格
+        keywords = keywords.strip(",").strip()
+
+        # 如果太短，可能是无效输出
+        if len(keywords) < 3:
+            logger.warning(f"生成的关键词太短: '{keywords}'，可能质量不佳")
+
+        return keywords
+
     def is_available(self) -> bool:
         """
         检查查询增强服务是否可用
 
         返回:
-            True 如果LLM可用，否则 False
+            True 如果配置完整，否则 False
         """
-        return self.llm_client.is_available()
+        return bool(self.api_key and self.api_url and self.model_id)
 
 
 # 全局查询增强器实例（单例模式）

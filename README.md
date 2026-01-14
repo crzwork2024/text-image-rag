@@ -242,9 +242,17 @@ curl -X POST "http://localhost:8000/query" \
 
 ```bash
 # .env 文件
+# 关键词生成专用模型（轻量级、快速、无思考过程）
+QUERY_ENHANCEMENT_MODEL_ID=Qwen/Qwen2.5-7B-Instruct
+
 # 原问题权重（范围0-1），关键词权重 = 1 - 此值
 QUERY_ENHANCEMENT_WEIGHT=0.6  # 推荐：60%原问题 + 40%关键词
 ```
+
+**模型选择说明：**
+- ✅ **Qwen/Qwen2.5-7B-Instruct**（默认）：快速、简洁、无思考过程
+- ✅ **meta-llama/Llama-3.1-8B-Instruct**：稳定、准确
+- ❌ **DeepSeek-R1系列**：不推荐，会输出思考过程，增加延迟
 
 #### 适用场景
 
@@ -377,6 +385,7 @@ DEBUG模式会在日志中显示：
 
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
+| `QUERY_ENHANCEMENT_MODEL_ID` | 关键词生成模型 | Qwen/Qwen2.5-7B-Instruct |
 | `QUERY_ENHANCEMENT_WEIGHT` | 原问题权重 | 0.6 |
 
 ## API文档
