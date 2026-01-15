@@ -116,6 +116,11 @@ class Config:
     # ==================== 日志配置 ====================
     LOG_FORMAT = '[%(asctime)s] - %(levelname)s - [%(name)s] - %(message)s'
     LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper())
+    
+    # ==================== 管理员配置 ====================
+    ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+    ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH", "")  # SHA256 哈希
+    ADMIN_TOKEN_EXPIRE = int(os.getenv("ADMIN_TOKEN_EXPIRE", "3600"))  # 1小时
 
     @classmethod
     def validate(cls) -> bool:

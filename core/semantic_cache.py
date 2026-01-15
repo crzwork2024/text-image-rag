@@ -137,15 +137,6 @@ class SemanticCache:
             - similarity: 相似度分数（hit 或 pending_confirm 时）
             - confirmation_id: 确认ID（仅当 pending_confirm 时）
         """
-        # #region agent log - query entry
-        import json
-        from datetime import datetime
-        try:
-            with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H2","location":"semantic_cache.py:140","message":"query方法入口","data":{"available":self._available,"question":question[:50]},"timestamp":datetime.now().timestamp()*1000}) + '\n')
-        except: pass
-        # #endregion
-
         if not self._available:
             return {"status": "miss"}
 
@@ -154,22 +145,8 @@ class SemanticCache:
             question_embedding_list = self.embedding_engine.encode([question])
             question_embedding = np.array(question_embedding_list[0], dtype=np.float32)
 
-            # #region agent log - embedding computed
-            try:
-                with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H5","location":"semantic_cache.py:146","message":"embedding计算完成","data":{"embedding_shape":question_embedding.shape,"embedding_mean":float(question_embedding.mean()),"embedding_std":float(question_embedding.std())},"timestamp":datetime.now().timestamp()*1000}) + '\n')
-            except: pass
-            # #endregion
-
             # 2. 获取所有缓存的问题ID
             cached_ids = self.redis.zrange("cache:embeddings", 0, -1)
-
-            # #region agent log - cached entries count
-            try:
-                with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H3,H4","location":"semantic_cache.py:149","message":"Redis缓存条目数","data":{"cached_count":len(cached_ids) if cached_ids else 0,"cached_ids":[c.decode('utf-8') if isinstance(c, bytes) else c for c in (cached_ids[:3] if cached_ids else [])]},"timestamp":datetime.now().timestamp()*1000}) + '\n')
-            except: pass
-            # #endregion
 
             if not cached_ids or len(cached_ids) == 0:
                 logger.debug("💭 缓存为空，首次查询")
@@ -207,15 +184,6 @@ class SemanticCache:
             # 4. 根据相似度分层处理
             logger.info(f"🎯 最高相似度: {best_similarity:.4f} "
                        f"(直接阈值: {self.threshold_direct}, 确认阈值: {self.threshold_confirm})")
-
-            # #region agent log - similarity check
-            import json
-            from datetime import datetime
-            try:
-                with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H3,H5","location":"semantic_cache.py:185","message":"相似度检查","data":{"best_similarity":float(best_similarity),"threshold_direct":self.threshold_direct,"threshold_confirm":self.threshold_confirm,"will_hit":best_similarity >= self.threshold_direct,"will_confirm":best_similarity >= self.threshold_confirm},"timestamp":datetime.now().timestamp()*1000}) + '\n')
-            except: pass
-            # #endregion
 
             if best_similarity >= self.threshold_direct:
                 # ✅ 高度相似 → 直接返回缓存
@@ -338,7 +306,9 @@ class SemanticCache:
     def set(
         self,
         question: str,
-        answer: str
+        answer: str,
+        cache_type: str = "auto",
+        quality_score: int = 0
     ):
         """
         添加新的缓存条目
@@ -346,16 +316,9 @@ class SemanticCache:
         参数:
             question: 问题文本
             answer: 答案文本
+            cache_type: 缓存类型 ("auto" | "confirmed" | "manual")
+            quality_score: 质量分数 (0-10, manual=10, confirmed=5, auto=0)
         """
-        # #region agent log - set entry
-        import json
-        from datetime import datetime
-        try:
-            with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H4","location":"semantic_cache.py:306","message":"set方法入口","data":{"available":self._available,"question":question[:50],"answer_length":len(answer)},"timestamp":datetime.now().timestamp()*1000}) + '\n')
-        except: pass
-        # #endregion
-
         if not self._available:
             return
 
@@ -364,22 +327,8 @@ class SemanticCache:
             question_embedding_list = self.embedding_engine.encode([question])
             embedding = np.array(question_embedding_list[0], dtype=np.float32)
 
-            # #region agent log - embedding for storage
-            try:
-                with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H5","location":"semantic_cache.py:324","message":"存储embedding计算完成","data":{"embedding_shape":embedding.shape,"embedding_mean":float(embedding.mean()),"embedding_std":float(embedding.std())},"timestamp":datetime.now().timestamp()*1000}) + '\n')
-            except: pass
-            # #endregion
-
             # 2. 检查缓存大小限制
             cache_size = self.redis.zcard("cache:embeddings")
-
-            # #region agent log - cache size check
-            try:
-                with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H4","location":"semantic_cache.py:327","message":"缓存大小检查","data":{"cache_size":cache_size,"max_size":self.max_cache_size},"timestamp":datetime.now().timestamp()*1000}) + '\n')
-            except: pass
-            # #endregion
             if cache_size >= self.max_cache_size:
                 # LRU 淘汰：删除最旧的条目
                 oldest_ids = self.redis.zrange("cache:embeddings", 0, 0)
@@ -398,7 +347,9 @@ class SemanticCache:
                 "embedding": embedding.tobytes(),
                 "timestamp": datetime.now().isoformat().encode('utf-8'),
                 "hit_count": b"0",
-                "last_hit": b""
+                "last_hit": b"",
+                "cache_type": cache_type.encode('utf-8'),
+                "quality_score": str(quality_score).encode('utf-8')
             }
 
             self.redis.hset(
@@ -417,17 +368,11 @@ class SemanticCache:
 
             # 7. 初始化热门问题统计（首次存储也算作1次访问）
             self.redis.zincrby("cache:popular", 1, question)
+            
+            # 8. 存储缓存类型标记
+            self.redis.set(f"cache:type:{cache_id}", cache_type)
 
-            logger.info(f"💾 添加到缓存: {cache_id[:8]}... | 问题: {question[:50]}...")
-
-            # #region agent log - cache set success
-            import json
-            from datetime import datetime
-            try:
-                with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H4,H6","location":"semantic_cache.py:363","message":"成功添加到缓存并初始化热门统计","data":{"cache_id":cache_id,"question":question[:50],"ttl":self.cache_ttl,"initial_popular_count":1},"timestamp":datetime.now().timestamp()*1000}) + '\n')
-            except: pass
-            # #endregion
+            logger.info(f"💾 添加到缓存: {cache_id[:8]}... | 类型: {cache_type} | 质量: {quality_score} | 问题: {question[:50]}...")
 
         except Exception as e:
             logger.error(f"❌ 添加缓存时出错: {e}", exc_info=True)
@@ -552,32 +497,46 @@ class SemanticCache:
             - total_entries: 缓存条目总数
             - total_hits: 总命中次数
             - popular_questions: 热门问题列表
+            - cache_by_type: 按类型分组的缓存数量
         """
         if not self._available:
             return {
                 "available": False,
                 "total_entries": 0,
                 "total_hits": 0,
-                "popular_questions": []
+                "popular_questions": [],
+                "cache_by_type": {}
             }
 
         try:
             total_entries = self.redis.zcard("cache:embeddings")
 
-            # 计算总命中次数
+            # 计算总命中次数和按类型统计
             total_hits = 0
+            cache_by_type = {"auto": 0, "confirmed": 0, "manual": 0}
+            
             cached_ids = self.redis.zrange("cache:embeddings", 0, -1)
             for cache_id in cached_ids:
                 cache_id_str = cache_id.decode('utf-8') if isinstance(cache_id, bytes) else cache_id
+                
+                # 统计命中次数
                 hit_count = self.redis.hget(f"cache:question:{cache_id_str}", "hit_count")
                 if hit_count:
                     total_hits += int(hit_count.decode('utf-8') if isinstance(hit_count, bytes) else hit_count)
+                
+                # 统计缓存类型
+                cache_type = self.redis.get(f"cache:type:{cache_id_str}")
+                if cache_type:
+                    cache_type_str = cache_type.decode('utf-8') if isinstance(cache_type, bytes) else cache_type
+                    if cache_type_str in cache_by_type:
+                        cache_by_type[cache_type_str] += 1
 
             return {
                 "available": True,
                 "total_entries": total_entries,
                 "total_hits": total_hits,
-                "popular_questions": self.get_popular_questions(10)
+                "popular_questions": self.get_popular_questions(10),
+                "cache_by_type": cache_by_type
             }
 
         except Exception as e:
@@ -586,5 +545,94 @@ class SemanticCache:
                 "available": False,
                 "total_entries": 0,
                 "total_hits": 0,
-                "popular_questions": []
+                "popular_questions": [],
+                "cache_by_type": {}
             }
+    
+    def clear_cache(self, cache_types: List[str] = None) -> int:
+        """
+        清除缓存
+        
+        参数:
+            cache_types: 要清除的缓存类型列表，None 表示清除所有
+            
+        返回:
+            删除的缓存条目数
+        """
+        if not self._available:
+            return 0
+        
+        try:
+            cached_ids = self.redis.zrange("cache:embeddings", 0, -1)
+            deleted_count = 0
+            
+            for cache_id in cached_ids:
+                cache_id_str = cache_id.decode('utf-8') if isinstance(cache_id, bytes) else cache_id
+                
+                # 如果指定了类型过滤
+                if cache_types:
+                    cache_type = self.redis.get(f"cache:type:{cache_id_str}")
+                    if cache_type:
+                        cache_type_str = cache_type.decode('utf-8') if isinstance(cache_type, bytes) else cache_type
+                        if cache_type_str not in cache_types:
+                            continue
+                
+                # 删除缓存
+                self._evict_cache(cache_id_str)
+                deleted_count += 1
+            
+            # 如果清除所有，也清空热门问题
+            if not cache_types:
+                self.redis.delete("cache:popular")
+            
+            logger.info(f"🗑️ 清除缓存: {deleted_count} 条")
+            return deleted_count
+            
+        except Exception as e:
+            logger.error(f"❌ 清除缓存时出错: {e}", exc_info=True)
+            return 0
+    
+    def get_all_cached_questions(self, limit: int = 100) -> List[Dict]:
+        """
+        获取所有缓存的问题列表（用于管理员查看）
+        
+        参数:
+            limit: 返回的最大数量
+            
+        返回:
+            缓存问题列表
+        """
+        if not self._available:
+            return []
+        
+        try:
+            cached_ids = self.redis.zrange("cache:embeddings", 0, limit - 1)
+            result = []
+            
+            for cache_id in cached_ids:
+                cache_id_str = cache_id.decode('utf-8') if isinstance(cache_id, bytes) else cache_id
+                cached_data = self.redis.hgetall(f"cache:question:{cache_id_str}")
+                
+                if cached_data:
+                    question = cached_data[b'question'].decode('utf-8')
+                    answer = cached_data.get(b'answer', b'').decode('utf-8')
+                    hit_count = int(cached_data.get(b'hit_count', b'0').decode('utf-8'))
+                    timestamp = cached_data.get(b'timestamp', b'').decode('utf-8')
+                    cache_type = cached_data.get(b'cache_type', b'auto').decode('utf-8')
+                    quality_score = int(cached_data.get(b'quality_score', b'0').decode('utf-8'))
+                    
+                    result.append({
+                        "cache_id": cache_id_str,
+                        "question": question,
+                        "answer": answer,
+                        "hit_count": hit_count,
+                        "timestamp": timestamp,
+                        "cache_type": cache_type,
+                        "quality_score": quality_score
+                    })
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ 获取缓存列表时出错: {e}", exc_info=True)
+            return []

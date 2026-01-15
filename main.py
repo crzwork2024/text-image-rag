@@ -8,12 +8,16 @@ import json
 import logging
 import uuid
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime, timedelta
+import secrets
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
+import hashlib
 
 from config import config
 from core.embeddings import embedding_engine
@@ -41,6 +45,48 @@ parent_store = {}
 # 全局变量：语义缓存
 semantic_cache = None
 
+# 全局变量：管理员会话存储
+admin_sessions = {}  # {token: expire_time}
+
+# 安全配置
+security = HTTPBearer(auto_error=False)
+
+
+# ==================== 管理员认证辅助函数 ====================
+def hash_password(password: str) -> str:
+    """哈希密码"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def verify_admin(username: str, password: str) -> bool:
+    """验证管理员凭证"""
+    admin_username = config.ADMIN_USERNAME if hasattr(config, 'ADMIN_USERNAME') else "admin"
+    admin_password_hash = config.ADMIN_PASSWORD_HASH if hasattr(config, 'ADMIN_PASSWORD_HASH') else hash_password("admin123")
+    
+    return username == admin_username and hash_password(password) == admin_password_hash
+
+
+def generate_admin_token() -> str:
+    """生成管理员 token"""
+    return secrets.token_urlsafe(32)
+
+
+def verify_admin_token(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> bool:
+    """验证管理员 token"""
+    if not credentials:
+        raise HTTPException(status_code=401, detail="未提供认证令牌")
+    
+    token = credentials.credentials
+    if token not in admin_sessions:
+        raise HTTPException(status_code=401, detail="认证令牌无效或已过期")
+    
+    # 检查是否过期
+    if datetime.now() > admin_sessions[token]:
+        del admin_sessions[token]
+        raise HTTPException(status_code=401, detail="认证令牌已过期")
+    
+    return True
+
 
 class QueryRequest(BaseModel):
     """查询请求模型"""
@@ -54,6 +100,33 @@ class CacheConfirmRequest(BaseModel):
     """缓存确认请求模型"""
     confirmation_id: str = Field(..., description="确认ID")
     user_confirmed: bool = Field(..., description="用户是否确认使用缓存")
+
+
+class FeedbackRequest(BaseModel):
+    """用户反馈请求模型"""
+    session_id: str = Field(..., description="会话ID")
+    question: str = Field(..., description="用户问题")
+    answer: str = Field(..., description="系统答案")
+    satisfied: bool = Field(..., description="用户是否满意")
+
+
+class AdminLoginRequest(BaseModel):
+    """管理员登录请求模型"""
+    username: str = Field(..., description="用户名")
+    password: str = Field(..., description="密码")
+
+
+class ManualCacheRequest(BaseModel):
+    """手动添加缓存请求模型"""
+    question: str = Field(..., description="问题文本", min_length=1)
+    answer: str = Field(..., description="答案文本", min_length=1)
+    quality_score: int = Field(10, description="质量分数", ge=0, le=10)
+
+
+class ClearCacheRequest(BaseModel):
+    """清除缓存请求模型"""
+    cache_types: Optional[List[str]] = Field(None, description="要清除的缓存类型")
+    confirm: bool = Field(False, description="确认清除")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -172,26 +245,10 @@ async def query_rag(req: QueryRequest):
     logger.info("=" * 60)
 
     try:
-        # #region agent log - cache check entry
-        import json
-        from datetime import datetime
-        try:
-            with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H1,H2","location":"main.py:176","message":"缓存查询入口","data":{"semantic_cache_is_none":semantic_cache is None,"is_available":semantic_cache.is_available() if semantic_cache else False,"prompt":req.prompt[:50]},"timestamp":datetime.now().timestamp()*1000}) + '\n')
-        except: pass
-        # #endregion
-
         # ==================== 步骤 0: 语义缓存查询 ====================
         if semantic_cache and semantic_cache.is_available():
             logger.info("步骤 0: 查询语义缓存")
             cache_result = await semantic_cache.query(req.prompt, req.session_id)
-
-            # #region agent log - cache query result
-            try:
-                with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H3","location":"main.py:179","message":"缓存查询结果","data":{"status":cache_result.get("status"),"similarity":cache_result.get("similarity",0),"has_answer":"answer" in cache_result},"timestamp":datetime.now().timestamp()*1000}) + '\n')
-            except: pass
-            # #endregion
 
             if cache_result["status"] == "hit":
                 # 缓存直接命中
@@ -487,26 +544,10 @@ async def query_rag(req: QueryRequest):
             answer = "抱歉，AI 生成回答时出现错误，请稍后重试。"
 
         # ==================== 添加到缓存 ====================
-        if semantic_cache and semantic_cache.is_available():
-            logger.info("💾 添加答案到语义缓存")
-
-            # #region agent log - before cache set
-            import json
-            from datetime import datetime
-            try:
-                with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H4","location":"main.py:476","message":"准备存储到缓存","data":{"prompt":req.prompt[:50],"answer_length":len(answer)},"timestamp":datetime.now().timestamp()*1000}) + '\n')
-            except: pass
-            # #endregion
-
-            semantic_cache.set(req.prompt, answer)
-
-            # #region agent log - after cache set
-            try:
-                with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H4","location":"main.py:477","message":"缓存存储完成","data":{"success":True},"timestamp":datetime.now().timestamp()*1000}) + '\n')
-            except: pass
-            # #endregion
+        # 注意：目前自动缓存已禁用，只有用户确认满意或管理员手动添加才会缓存
+        # if semantic_cache and semantic_cache.is_available():
+        #     logger.info("💾 添加答案到语义缓存")
+        #     semantic_cache.set(req.prompt, answer)
 
         # ==================== 返回结果 ====================
         logger.info("=" * 60)
@@ -566,6 +607,42 @@ async def confirm_cache(req: CacheConfirmRequest):
         }
 
 
+@app.post("/cache/feedback")
+async def cache_feedback(req: FeedbackRequest):
+    """
+    用户满意度反馈
+
+    当用户对答案满意时，将问答对添加到高质量缓存
+    """
+    if not semantic_cache or not semantic_cache.is_available():
+        return {"status": "unavailable", "message": "缓存服务不可用"}
+
+    try:
+        if req.satisfied:
+            # 用户满意，添加到高质量缓存
+            semantic_cache.set(
+                req.question,
+                req.answer,
+                cache_type="confirmed",
+                quality_score=5
+            )
+            logger.info(f"✅ 用户反馈满意，已添加到高质量缓存: {req.question[:50]}")
+            return {
+                "status": "success",
+                "message": "感谢反馈！已保存到精选问答"
+            }
+        else:
+            # 用户不满意，记录但不缓存
+            logger.info(f"❌ 用户反馈不满意: {req.question[:50]}")
+            return {
+                "status": "success",
+                "message": "感谢反馈！我们会改进"
+            }
+    except Exception as e:
+        logger.error(f"处理用户反馈时出错: {e}")
+        raise HTTPException(status_code=500, detail="处理反馈失败")
+
+
 @app.get("/cache/popular")
 async def get_popular_questions():
     """
@@ -574,27 +651,10 @@ async def get_popular_questions():
     返回:
         热门问题列表，包含问题、访问次数、相似问题数
     """
-    # #region agent log - popular questions query
-    import json
-    from datetime import datetime
-    try:
-        with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H6","location":"main.py:569","message":"热门问题查询","data":{"cache_available":semantic_cache and semantic_cache.is_available()},"timestamp":datetime.now().timestamp()*1000}) + '\n')
-    except: pass
-    # #endregion
-
     if not semantic_cache or not semantic_cache.is_available():
         return {"popular_questions": []}
 
     popular_questions = semantic_cache.get_popular_questions(3)
-
-    # #region agent log - popular questions result
-    try:
-        with open(r'c:\Users\RONGZHEN CHEN\Desktop\Projects\multimodual-rag\rag_project\.cursor\debug.log', 'a', encoding='utf-8') as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"H6","location":"main.py:580","message":"热门问题结果","data":{"count":len(popular_questions),"questions":[q.get('question','')[:30] for q in popular_questions[:3]]},"timestamp":datetime.now().timestamp()*1000}) + '\n')
-    except: pass
-    # #endregion
-
     return {"popular_questions": popular_questions}
 
 
@@ -626,6 +686,216 @@ async def health_check():
         "parent_store_size": len(parent_store),
         "cache_available": cache_available
     }
+
+
+# ==================== 管理员 API ====================
+
+@app.post("/admin/login")
+async def admin_login(req: AdminLoginRequest):
+    """
+    管理员登录
+
+    返回:
+        认证令牌和过期时间
+    """
+    if not verify_admin(req.username, req.password):
+        logger.warning(f"管理员登录失败: {req.username}")
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+    # 生成 token
+    token = generate_admin_token()
+    expire_time = datetime.now() + timedelta(hours=1)
+    admin_sessions[token] = expire_time
+
+    logger.info(f"✅ 管理员登录成功: {req.username}")
+    return {
+        "token": token,
+        "expires_in": 3600,
+        "expires_at": expire_time.isoformat()
+    }
+
+
+@app.post("/admin/logout")
+async def admin_logout(authorized: bool = Depends(verify_admin_token),
+                       credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """管理员登出"""
+    token = credentials.credentials
+    if token in admin_sessions:
+        del admin_sessions[token]
+        logger.info("✅ 管理员登出成功")
+    
+    return {"status": "success", "message": "已登出"}
+
+
+@app.get("/admin/hot-questions")
+async def get_hot_questions(
+    limit: int = 50,
+    min_count: int = 1,
+    authorized: bool = Depends(verify_admin_token)
+):
+    """
+    获取热门问题列表（管理员）
+
+    参数:
+        limit: 返回数量
+        min_count: 最小提问次数
+
+    返回:
+        热门问题列表
+    """
+    if not semantic_cache or not semantic_cache.is_available():
+        return {"hot_questions": []}
+
+    try:
+        # 获取所有热门问题
+        popular = semantic_cache.redis.zrevrange("cache:popular", 0, limit - 1, withscores=True)
+        
+        result = []
+        for question_bytes, count in popular:
+            if count < min_count:
+                continue
+                
+            question = question_bytes.decode('utf-8') if isinstance(question_bytes, bytes) else question_bytes
+            cache_id = semantic_cache._compute_hash(question)
+            
+            # 检查是否已缓存
+            cached_data = semantic_cache.redis.hgetall(f"cache:question:{cache_id}")
+            is_cached = bool(cached_data)
+            cache_type = None
+            
+            if is_cached:
+                cache_type = cached_data.get(b'cache_type', b'auto').decode('utf-8')
+            
+            result.append({
+                "question": question,
+                "count": int(count),
+                "cached": is_cached,
+                "cache_type": cache_type,
+                "cache_id": cache_id
+            })
+        
+        return {"hot_questions": result}
+        
+    except Exception as e:
+        logger.error(f"获取热门问题时出错: {e}")
+        raise HTTPException(status_code=500, detail="获取热门问题失败")
+
+
+@app.get("/admin/cache/list")
+async def get_cache_list(
+    limit: int = 100,
+    authorized: bool = Depends(verify_admin_token)
+):
+    """
+    获取所有缓存列表（管理员）
+
+    返回:
+        缓存问题列表
+    """
+    if not semantic_cache or not semantic_cache.is_available():
+        return {"cached_questions": []}
+
+    try:
+        cached_questions = semantic_cache.get_all_cached_questions(limit)
+        return {"cached_questions": cached_questions}
+        
+    except Exception as e:
+        logger.error(f"获取缓存列表时出错: {e}")
+        raise HTTPException(status_code=500, detail="获取缓存列表失败")
+
+
+@app.post("/admin/cache/add")
+async def add_manual_cache(
+    req: ManualCacheRequest,
+    authorized: bool = Depends(verify_admin_token)
+):
+    """
+    手动添加缓存（管理员）
+
+    用于添加精选问答对
+    """
+    if not semantic_cache or not semantic_cache.is_available():
+        raise HTTPException(status_code=503, detail="缓存服务不可用")
+
+    try:
+        # 添加到高优先级缓存
+        semantic_cache.set(
+            req.question,
+            req.answer,
+            cache_type="manual",
+            quality_score=req.quality_score
+        )
+        
+        cache_id = semantic_cache._compute_hash(req.question)
+        logger.info(f"✅ 管理员手动添加缓存: {req.question[:50]}")
+        
+        return {
+            "status": "success",
+            "cache_id": cache_id,
+            "message": "已添加到高优先级缓存"
+        }
+        
+    except Exception as e:
+        logger.error(f"手动添加缓存时出错: {e}")
+        raise HTTPException(status_code=500, detail="添加缓存失败")
+
+
+@app.delete("/admin/cache/clear")
+async def clear_cache(
+    req: ClearCacheRequest,
+    authorized: bool = Depends(verify_admin_token)
+):
+    """
+    清除缓存（管理员）
+
+    参数:
+        cache_types: 要清除的缓存类型列表（None 表示全部）
+        confirm: 必须为 true 才能执行
+    """
+    if not req.confirm:
+        raise HTTPException(status_code=400, detail="必须确认清除操作")
+
+    if not semantic_cache or not semantic_cache.is_available():
+        raise HTTPException(status_code=503, detail="缓存服务不可用")
+
+    try:
+        deleted_count = semantic_cache.clear_cache(req.cache_types)
+        
+        cache_types_str = ", ".join(req.cache_types) if req.cache_types else "所有"
+        logger.warning(f"🗑️ 管理员清除缓存: {cache_types_str} ({deleted_count} 条)")
+        
+        return {
+            "status": "success",
+            "deleted_count": deleted_count,
+            "message": f"已清除 {deleted_count} 条缓存"
+        }
+        
+    except Exception as e:
+        logger.error(f"清除缓存时出错: {e}")
+        raise HTTPException(status_code=500, detail="清除缓存失败")
+
+
+@app.delete("/admin/cache/{cache_id}")
+async def delete_cache_item(
+    cache_id: str,
+    authorized: bool = Depends(verify_admin_token)
+):
+    """删除单个缓存条目（管理员）"""
+    if not semantic_cache or not semantic_cache.is_available():
+        raise HTTPException(status_code=503, detail="缓存服务不可用")
+
+    try:
+        semantic_cache._evict_cache(cache_id)
+        logger.info(f"🗑️ 管理员删除缓存: {cache_id}")
+        
+        return {
+            "status": "success",
+            "message": "已删除缓存条目"
+        }
+        
+    except Exception as e:
+        logger.error(f"删除缓存时出错: {e}")
+        raise HTTPException(status_code=500, detail="删除缓存失败")
 
 
 @app.get("/stats")

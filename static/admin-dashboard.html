@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理员后台 - RAG 智能问答系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: #f8fafc;
+            color: #1e293b;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem 2rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: white;
+            color: #667eea;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-warning {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            color: #64748b;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab:hover {
+            color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .card {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            margin-bottom: 2rem;
+        }
+
+        .card h2 {
+            font-size: 1.3rem;
+            margin-bottom: 1.5rem;
+            color: #1e293b;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #475569;
+        }
+
+        tr:hover {
+            background: #f8fafc;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .badge-auto {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .badge-confirmed {
+            background: #dcfce7;
+            color: #15803d;
+        }
+
+        .badge-manual {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 0.85rem;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 16px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-header h3 {
+            font-size: 1.3rem;
+            color: #1e293b;
+        }
+
+        .btn-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #64748b;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #475569;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        .form-group textarea {
+            min-height: 150px;
+            font-family: inherit;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #64748b;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #64748b;
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #10b981;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 2000;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .answer-preview {
+            background: #f8fafc;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            max-height: 300px;
+            overflow-y: auto;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <h1>🛠️ 管理员后台</h1>
+            <div class="header-actions">
+                <a href="/" class="btn btn-primary">返回首页</a>
+                <button class="btn btn-danger" onclick="logout()">登出</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 统计卡片 -->
+        <div class="stats-grid" id="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="total-cache">-</div>
+                <div class="stat-label">总缓存数</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="total-hits">-</div>
+                <div class="stat-label">总命中次数</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="manual-cache">-</div>
+                <div class="stat-label">手动缓存</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="confirmed-cache">-</div>
+                <div class="stat-label">用户确认</div>
+            </div>
+        </div>
+
+        <!-- 标签页 -->
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('hot-questions')">🔥 热门问题</button>
+            <button class="tab" onclick="switchTab('cache-list')">📦 缓存列表</button>
+            <button class="tab" onclick="switchTab('cache-management')">🗑️ 缓存管理</button>
+        </div>
+
+        <!-- 热门问题标签页 -->
+        <div class="tab-content active" id="hot-questions">
+            <div class="card">
+                <h2>热门问题管理</h2>
+                <div id="hot-questions-content" class="loading">加载中...</div>
+            </div>
+        </div>
+
+        <!-- 缓存列表标签页 -->
+        <div class="tab-content" id="cache-list">
+            <div class="card">
+                <h2>缓存问题列表</h2>
+                <div id="cache-list-content" class="loading">加载中...</div>
+            </div>
+        </div>
+
+        <!-- 缓存管理标签页 -->
+        <div class="tab-content" id="cache-management">
+            <div class="card">
+                <h2>缓存管理操作</h2>
+                <p style="margin-bottom: 2rem; color: #64748b;">
+                    ⚠️ 危险操作：清除缓存将无法恢复，请谨慎操作！
+                </p>
+                
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <button class="btn btn-warning" onclick="clearCacheByType(['auto'])">
+                        清除自动缓存
+                    </button>
+                    <button class="btn btn-danger" onclick="clearAllCache()">
+                        清除所有缓存
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 查看问答模态框 -->
+    <div class="modal" id="view-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>查看问答</h3>
+                <button class="btn-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- 手动添加缓存模态框 -->
+    <div class="modal" id="add-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>手动添加到缓存</h3>
+                <button class="btn-close" onclick="closeAddModal()">&times;</button>
+            </div>
+            <form onsubmit="submitManualCache(event)">
+                <div class="form-group">
+                    <label for="cache-question">问题</label>
+                    <textarea id="cache-question" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="cache-answer">答案</label>
+                    <textarea id="cache-answer" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="quality-score">质量分数 (1-10)</label>
+                    <input type="number" id="quality-score" min="1" max="10" value="10">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">
+                    添加到缓存
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let currentToken = '';
+
+        // 检查登录状态
+        function checkAuth() {
+            const token = localStorage.getItem('admin_token');
+            const expires = localStorage.getItem('admin_expires');
+            
+            if (!token || !expires) {
+                window.location.href = '/admin-login.html';
+                return null;
+            }
+            
+            const expiresDate = new Date(expires);
+            if (expiresDate <= new Date()) {
+                localStorage.removeItem('admin_token');
+                localStorage.removeItem('admin_expires');
+                window.location.href = '/admin-login.html';
+                return null;
+            }
+            
+            currentToken = token;
+            return token;
+        }
+
+        // 登出
+        async function logout() {
+            try {
+                await fetch('/admin/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+            } catch (error) {
+                console.error('登出错误:', error);
+            }
+            
+            localStorage.removeItem('admin_token');
+            localStorage.removeItem('admin_expires');
+            window.location.href = '/admin-login.html';
+        }
+
+        // 显示提示消息
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.style.background = type === 'success' ? '#10b981' : '#ef4444';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.animation = 'slideOut 0.3s ease-out';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // 切换标签页
+        function switchTab(tabName) {
+            // 更新标签按钮状态
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // 更新标签内容
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(tabName).classList.add('active');
+            
+            // 加载对应数据
+            if (tabName === 'hot-questions') {
+                loadHotQuestions();
+            } else if (tabName === 'cache-list') {
+                loadCacheList();
+            }
+        }
+
+        // 加载统计数据
+        async function loadStats() {
+            try {
+                const response = await fetch('/cache/stats', {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                const data = await response.json();
+                
+                document.getElementById('total-cache').textContent = data.total_entries || 0;
+                document.getElementById('total-hits').textContent = data.total_hits || 0;
+                document.getElementById('manual-cache').textContent = data.cache_by_type?.manual || 0;
+                document.getElementById('confirmed-cache').textContent = data.cache_by_type?.confirmed || 0;
+            } catch (error) {
+                console.error('加载统计失败:', error);
+            }
+        }
+
+        // 处理认证失败
+        function handleAuthError(response) {
+            if (response.status === 401) {
+                localStorage.removeItem('admin_token');
+                localStorage.removeItem('admin_expires');
+                showToast('❌ 登录已过期，请重新登录', 'error');
+                setTimeout(() => {
+                    window.location.href = '/admin-login.html';
+                }, 1500);
+                return true;
+            }
+            return false;
+        }
+
+        // 加载热门问题
+        async function loadHotQuestions() {
+            const container = document.getElementById('hot-questions-content');
+            container.innerHTML = '<div class="loading">加载中...</div>';
+            
+            try {
+                const response = await fetch('/admin/hot-questions?limit=50', {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                
+                if (handleAuthError(response)) return;
+                if (!response.ok) throw new Error('加载失败');
+                
+                const data = await response.json();
+                
+                if (!data.hot_questions || data.hot_questions.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📭</div>
+                            <p>暂无热门问题</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                let html = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>问题</th>
+                                <th>提问次数</th>
+                                <th>缓存状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                data.hot_questions.forEach(item => {
+                    const cacheTypeText = item.cache_type ? 
+                        `<span class="badge badge-${item.cache_type}">${item.cache_type}</span>` : 
+                        '未缓存';
+                    
+                    html += `
+                        <tr>
+                            <td>${item.question}</td>
+                            <td>${item.count}</td>
+                            <td>${cacheTypeText}</td>
+                            <td>
+                                ${!item.cached ? 
+                                    `<button class="btn btn-primary btn-sm" onclick="viewAndCache('${item.question.replace(/'/g, "\\'")}')">
+                                        查看并缓存
+                                    </button>` : 
+                                    `<button class="btn btn-sm" onclick="viewCachedAnswer('${item.cache_id}')">
+                                        查看答案
+                                    </button>`
+                                }
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                html += '</tbody></table>';
+                container.innerHTML = html;
+                
+            } catch (error) {
+                console.error('加载热门问题失败:', error);
+                container.innerHTML = '<div class="empty-state">加载失败，请刷新重试</div>';
+            }
+        }
+
+        // 加载缓存列表
+        async function loadCacheList() {
+            const container = document.getElementById('cache-list-content');
+            container.innerHTML = '<div class="loading">加载中...</div>';
+            
+            try {
+                const response = await fetch('/admin/cache/list?limit=1000', {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                
+                if (handleAuthError(response)) return;
+                if (!response.ok) throw new Error('加载失败');
+                
+                const data = await response.json();
+                
+                if (!data.cached_questions || data.cached_questions.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📭</div>
+                            <p>暂无缓存数据</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                let html = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>问题</th>
+                                <th>类型</th>
+                                <th>质量分</th>
+                                <th>命中次数</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                data.cached_questions.forEach(item => {
+                    html += `
+                        <tr>
+                            <td>${item.question}</td>
+                            <td><span class="badge badge-${item.cache_type}">${item.cache_type}</span></td>
+                            <td>${item.quality_score}</td>
+                            <td>${item.hit_count}</td>
+                            <td>
+                                <button class="btn btn-primary btn-sm" onclick="viewCachedAnswer('${item.cache_id}')" style="margin-right: 8px;">
+                                    查看/编辑
+                                </button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteCacheItem('${item.cache_id}')">
+                                    删除
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                html += '</tbody></table>';
+                container.innerHTML = html;
+                
+            } catch (error) {
+                console.error('加载缓存列表失败:', error);
+                container.innerHTML = '<div class="empty-state">加载失败，请刷新重试</div>';
+            }
+        }
+
+        // 查看已缓存的答案
+        async function viewCachedAnswer(cacheId) {
+            const modal = document.getElementById('add-modal');
+            const modalTitle = modal.querySelector('.modal-header h3');
+            modalTitle.textContent = '查看和编辑缓存';
+            
+            // 显示加载状态
+            document.getElementById('cache-question').value = '加载中...';
+            document.getElementById('cache-answer').value = '加载中...';
+            modal.classList.add('show');
+            
+            try {
+                // 从缓存列表API获取详情
+                const response = await fetch('/admin/cache/list?limit=1000', {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                
+                if (handleAuthError(response)) {
+                    closeAddModal();
+                    return;
+                }
+                
+                const data = await response.json();
+                const cacheItem = data.cached_questions.find(item => item.cache_id === cacheId);
+                
+                if (cacheItem) {
+                    document.getElementById('cache-question').value = cacheItem.question;
+                    document.getElementById('cache-answer').value = cacheItem.answer;
+                    document.getElementById('quality-score').value = cacheItem.quality_score || 10;
+                    
+                    // 存储当前正在编辑的缓存ID
+                    modal.dataset.editingCacheId = cacheId;
+                    modal.dataset.isEditing = 'true';
+                } else {
+                    showToast('❌ 未找到缓存数据', 'error');
+                    closeAddModal();
+                }
+                
+            } catch (error) {
+                console.error('加载缓存详情失败:', error);
+                showToast('❌ 加载失败', 'error');
+                closeAddModal();
+            }
+        }
+
+        // 查看并缓存
+        async function viewAndCache(question) {
+            const modal = document.getElementById('add-modal');
+            const modalTitle = modal.querySelector('.modal-header h3');
+            modalTitle.textContent = '查看并添加到缓存';
+            
+            // 清空编辑状态
+            delete modal.dataset.editingCacheId;
+            delete modal.dataset.isEditing;
+            
+            // 设置问题
+            document.getElementById('cache-question').value = question;
+            document.getElementById('cache-answer').value = '正在生成答案...';
+            document.getElementById('quality-score').value = 10;
+            
+            modal.classList.add('show');
+            
+            try {
+                // 执行一次查询获取答案
+                const response = await fetch('/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: question,
+                        use_rerank: true,
+                        use_query_enhancement: false
+                    })
+                });
+                
+                const data = await response.json();
+                
+                // 填充答案到文本框，让用户可以编辑
+                document.getElementById('cache-answer').value = data.answer;
+                
+            } catch (error) {
+                console.error('查询失败:', error);
+                document.getElementById('cache-answer').value = '查询失败，请手动输入答案或重试';
+                showToast('❌ 自动查询失败，请手动输入答案', 'error');
+            }
+        }
+
+        // 提交手动缓存表单
+        async function submitManualCache(event) {
+            event.preventDefault();
+            
+            const modal = document.getElementById('add-modal');
+            const question = document.getElementById('cache-question').value;
+            const answer = document.getElementById('cache-answer').value;
+            const qualityScore = parseInt(document.getElementById('quality-score').value);
+            
+            // 检查是否是编辑模式
+            const isEditing = modal.dataset.isEditing === 'true';
+            const editingCacheId = modal.dataset.editingCacheId;
+            
+            try {
+                // 如果是编辑模式，先删除旧缓存
+                if (isEditing && editingCacheId) {
+                    const deleteResponse = await fetch(`/admin/cache/${editingCacheId}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': `Bearer ${currentToken}`
+                        }
+                    });
+                    
+                    if (handleAuthError(deleteResponse)) return;
+                    
+                    if (!deleteResponse.ok) {
+                        showToast('❌ 删除旧缓存失败', 'error');
+                        return;
+                    }
+                }
+                
+                // 添加新缓存
+                const response = await fetch('/admin/cache/add', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        question: question,
+                        answer: answer,
+                        quality_score: qualityScore
+                    })
+                });
+                
+                if (handleAuthError(response)) return;
+                
+                if (response.ok) {
+                    showToast(isEditing ? '✅ 缓存已更新' : '✅ 已添加到缓存');
+                    closeAddModal();
+                    loadHotQuestions();
+                    loadCacheList();
+                    loadStats();
+                } else {
+                    const errorData = await response.json();
+                    showToast(`❌ ${errorData.detail || '操作失败'}`, 'error');
+                }
+            } catch (error) {
+                console.error('操作失败:', error);
+                showToast('❌ 操作失败', 'error');
+            }
+        }
+
+        // 删除缓存项
+        async function deleteCacheItem(cacheId) {
+            if (!confirm('确定要删除此缓存吗？')) return;
+            
+            try {
+                const response = await fetch(`/admin/cache/${cacheId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                
+                if (handleAuthError(response)) return;
+                
+                if (response.ok) {
+                    showToast('✅ 已删除缓存');
+                    loadCacheList();
+                    loadStats();
+                } else {
+                    showToast('❌ 删除失败', 'error');
+                }
+            } catch (error) {
+                console.error('删除失败:', error);
+                showToast('❌ 删除失败', 'error');
+            }
+        }
+
+        // 清除指定类型的缓存
+        async function clearCacheByType(types) {
+            const typeText = types.join(', ');
+            if (!confirm(`确定要清除 ${typeText} 类型的所有缓存吗？此操作无法恢复！`)) return;
+            
+            try {
+                const response = await fetch('/admin/cache/clear', {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        cache_types: types,
+                        confirm: true
+                    })
+                });
+                
+                if (handleAuthError(response)) return;
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showToast(`✅ 已清除 ${data.deleted_count} 条缓存`);
+                    loadStats();
+                    loadCacheList();
+                } else {
+                    showToast('❌ 清除失败', 'error');
+                }
+            } catch (error) {
+                console.error('清除失败:', error);
+                showToast('❌ 清除失败', 'error');
+            }
+        }
+
+        // 清除所有缓存
+        async function clearAllCache() {
+            if (!confirm('⚠️ 警告：确定要清除所有缓存吗？此操作无法恢复！')) return;
+            if (!confirm('请再次确认：真的要删除所有缓存数据吗？')) return;
+            
+            try {
+                const response = await fetch('/admin/cache/clear', {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        cache_types: null,
+                        confirm: true
+                    })
+                });
+                
+                if (handleAuthError(response)) return;
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showToast(`✅ 已清除所有缓存 (${data.deleted_count} 条)`);
+                    loadStats();
+                    loadCacheList();
+                } else {
+                    showToast('❌ 清除失败', 'error');
+                }
+            } catch (error) {
+                console.error('清除失败:', error);
+                showToast('❌ 清除失败', 'error');
+            }
+        }
+
+        // 关闭模态框
+        function closeModal() {
+            document.getElementById('view-modal').classList.remove('show');
+        }
+
+        function closeAddModal() {
+            const modal = document.getElementById('add-modal');
+            modal.classList.remove('show');
+            
+            // 清空表单
+            document.getElementById('cache-question').value = '';
+            document.getElementById('cache-answer').value = '';
+            document.getElementById('quality-score').value = 10;
+            
+            // 清除编辑状态
+            delete modal.dataset.editingCacheId;
+            delete modal.dataset.isEditing;
+            
+            // 恢复标题
+            modal.querySelector('.modal-header h3').textContent = '手动添加到缓存';
+        }
+
+        // 页面加载
+        window.onload = function() {
+            if (checkAuth()) {
+                loadStats();
+                loadHotQuestions();
+            }
+        };
+    </script>
+</body>
+</html>

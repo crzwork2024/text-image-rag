@@ -286,6 +286,74 @@
             text-align: left;
         }
 
+        /* 满意度反馈按钮 */
+        .feedback-buttons {
+            display: none;
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 2px dashed #e2e8f0;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        .feedback-buttons.show {
+            display: flex;
+        }
+
+        .feedback-btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .feedback-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn-satisfied {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+
+        .btn-unsatisfied {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+        }
+
+        .feedback-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .admin-link {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            transition: all 0.3s;
+        }
+
+        .admin-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.6);
+        }
+
         /* 缓存确认对话框 */
         .confirmation-dialog {
             position: fixed;
@@ -456,13 +524,29 @@
                     <div id="cache-info" class="badge cache-badge" style="display: none;"></div>
                 </div>
                 <div id="answer-content" class="answer-box"></div>
+                <div class="feedback-buttons" id="feedback-buttons">
+                    <button class="feedback-btn btn-satisfied" onclick="submitFeedback(true)">
+                        👍 满意
+                    </button>
+                    <button class="feedback-btn btn-unsatisfied" onclick="submitFeedback(false)">
+                        👎 不满意
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 
+    <!-- 管理员入口 -->
+    <a href="/admin-login.html" class="admin-link">🔐 管理员</a>
+
     <script>
         // 全局变量：存储session_id
         let sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        // 全局变量：存储当前问答（用于反馈）
+        let currentQuestion = '';
+        let currentAnswer = '';
+        let feedbackSubmitted = false;
 
         // 页面加载时获取热门问题
         async function loadPopularQuestions() {
@@ -631,6 +715,84 @@
 
             // 渲染 Markdown 答案
             document.getElementById('answer-content').innerHTML = marked.parse(data.answer);
+            
+            // 保存当前问答（用于反馈）
+            currentAnswer = data.answer;
+            
+            // 显示满意度反馈按钮（仅对非缓存答案显示）
+            const feedbackButtons = document.getElementById('feedback-buttons');
+            if (!isFromCache && !feedbackSubmitted) {
+                feedbackButtons.classList.add('show');
+            } else {
+                feedbackButtons.classList.remove('show');
+            }
+        }
+        
+        // 提交用户反馈
+        async function submitFeedback(satisfied) {
+            const feedbackButtons = document.getElementById('feedback-buttons');
+            const buttons = feedbackButtons.querySelectorAll('button');
+            
+            // 禁用按钮
+            buttons.forEach(btn => btn.disabled = true);
+            
+            try {
+                const response = await fetch('/cache/feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        question: currentQuestion,
+                        answer: currentAnswer,
+                        satisfied: satisfied
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    // 显示提示信息
+                    const message = satisfied ? 
+                        '✅ 感谢反馈！已保存到精选问答' : 
+                        '📝 感谢反馈！我们会改进';
+                    
+                    // 简单的toast提示
+                    const toast = document.createElement('div');
+                    toast.style.cssText = `
+                        position: fixed;
+                        top: 20px;
+                        right: 20px;
+                        background: ${satisfied ? '#10b981' : '#f59e0b'};
+                        color: white;
+                        padding: 15px 25px;
+                        border-radius: 8px;
+                        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                        z-index: 1000;
+                        animation: slideIn 0.3s ease-out;
+                    `;
+                    toast.textContent = message;
+                    document.body.appendChild(toast);
+                    
+                    setTimeout(() => {
+                        toast.style.animation = 'slideOut 0.3s ease-out';
+                        setTimeout(() => toast.remove(), 300);
+                    }, 3000);
+                    
+                    // 隐藏反馈按钮
+                    feedbackButtons.classList.remove('show');
+                    feedbackSubmitted = true;
+                    
+                    // 如果用户满意，刷新热门问题
+                    if (satisfied) {
+                        loadPopularQuestions();
+                    }
+                }
+            } catch (error) {
+                console.error('[Error] 提交反馈失败:', error);
+                alert('提交反馈失败，请稍后重试');
+                // 重新启用按钮
+                buttons.forEach(btn => btn.disabled = false);
+            }
         }
 
         // 提问逻辑
@@ -642,6 +804,10 @@
             const prompt = questionEl.value.trim();
 
             if (!prompt) return;
+            
+            // 保存当前问题并重置反馈状态
+            currentQuestion = prompt;
+            feedbackSubmitted = false;
 
             // UI 状态更新
             btn.disabled = true;
