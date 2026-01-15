@@ -69,7 +69,7 @@ class Config:
     # ==================== 检索参数配置 ====================
     RETRIEVAL_COUNT = int(os.getenv("RETRIEVAL_COUNT", "10"))        # 向量检索初步召回数量
     RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "3"))              # 重排后保留的数量
-    RERANK_THRESHOLD = float(os.getenv("RERANK_THRESHOLD", "0.01")) # Rerank 分数阈值
+    RERANK_THRESHOLD = float(os.getenv("RERANK_THRESHOLD", "0.30")) # Rerank 分数阈值（30%，过滤低质量结果）
 
     # 向量搜索阈值（不同模式使用不同阈值）
     VECTOR_SEARCH_THRESHOLD_WITH_RERANK = float(os.getenv("VECTOR_SEARCH_THRESHOLD_WITH_RERANK", "0.20"))  # 精排模式：宽松（有Rerank二次过滤）

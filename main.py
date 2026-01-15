@@ -491,18 +491,29 @@ async def query_rag(req: QueryRequest):
 
                 sim = 1 - raw_dists[candidate_idx]
                 score_pct = f"{round(sim * 100, 2)}%"
-
-                logger.info(f"  [✓ {i+1}] 相似度: {score_pct:>7s} | 父Hash: {p_hash[:16]}...")
-
-                # 在直取模式下，如果相似度低于40%，给出警告
-                if sim < 0.40:
-                    logger.warning(f"  ⚠️  文档#{i+1}相似度较低({score_pct})，建议启用精排或检查问题")
-
-                final_hashes.append(p_hash)
-                score_summaries.append({"rank": i+1, "rerank_score": score_pct})
+                
+                # 直取模式使用严格阈值（默认50%）
+                direct_threshold = config.VECTOR_SEARCH_THRESHOLD_WITHOUT_RERANK
+                
+                if sim >= direct_threshold:
+                    logger.info(f"  [✓ {i+1}] 相似度: {score_pct:>7s} | 父Hash: {p_hash[:16]}... (已选入)")
+                    final_hashes.append(p_hash)
+                    score_summaries.append({"rank": i+1, "rerank_score": score_pct})
+                else:
+                    logger.info(f"  [✗ {i+1}] 相似度: {score_pct:>7s} | 父Hash: {p_hash[:16]}... (低于阈值{direct_threshold*100:.0f}%，已过滤)")
+                    score_summaries.append({"rank": i+1, "rerank_score": score_pct})
 
             logger.info("=" * 60)
             logger.info(f"✓ 直取 {len(final_hashes)} 个文档")
+
+        # ==================== 检查是否有有效结果 ====================
+        if not final_hashes:
+            logger.warning("所有结果均低于相关度阈值，未找到足够相关的内容")
+            return QueryResponse(
+                answer="抱歉，未找到与您问题足够相关的内容。\n\n建议：\n1. 尝试重新表述问题\n2. 使用不同的关键词\n3. 检查知识库是否包含相关信息",
+                best_score=score_summaries[0]["rerank_score"] if score_summaries else "0%",
+                sources_count=0
+            )
 
         # ==================== 步骤 5: 获取完整上下文 ====================
         step_num = "5/6" if req.use_query_enhancement else "4/5"
