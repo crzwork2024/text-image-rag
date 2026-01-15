@@ -20,6 +20,7 @@ class QueryResponse(BaseModel):
     answer: str
     best_score: str
     sources_count: int
+    source_hashes: Optional[list] = None  # 源文档的 parent_hash 列表
     metadata: Optional[dict] = None
 
 

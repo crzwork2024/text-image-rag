@@ -546,6 +546,7 @@
         // 全局变量：存储当前问答（用于反馈）
         let currentQuestion = '';
         let currentAnswer = '';
+        let currentSourceHashes = [];  // 当前答案的源文档Hash列表
         let feedbackSubmitted = false;
 
         // 页面加载时获取热门问题
@@ -718,11 +719,15 @@
             
             // 保存当前问答（用于反馈）
             currentAnswer = data.answer;
+            currentSourceHashes = data.source_hashes || [];  // 保存源文档Hash列表
             
-            // 显示满意度反馈按钮（仅对非缓存答案显示）
+            // 显示满意度反馈按钮（所有答案都可以反馈）
             const feedbackButtons = document.getElementById('feedback-buttons');
-            if (!isFromCache && !feedbackSubmitted) {
+            if (!feedbackSubmitted) {
                 feedbackButtons.classList.add('show');
+                // 重新启用按钮（避免上一次禁用状态残留）
+                const buttons = feedbackButtons.querySelectorAll('button');
+                buttons.forEach(btn => btn.disabled = false);
             } else {
                 feedbackButtons.classList.remove('show');
             }
@@ -730,10 +735,16 @@
         
         // 提交用户反馈
         async function submitFeedback(satisfied) {
+            // 防止重复提交
+            if (feedbackSubmitted) {
+                return;
+            }
+            
             const feedbackButtons = document.getElementById('feedback-buttons');
             const buttons = feedbackButtons.querySelectorAll('button');
-            
-            // 禁用按钮
+
+            // 禁用按钮并标记已提交
+            feedbackSubmitted = true;
             buttons.forEach(btn => btn.disabled = true);
             
             try {
@@ -744,7 +755,8 @@
                         session_id: sessionId,
                         question: currentQuestion,
                         answer: currentAnswer,
-                        satisfied: satisfied
+                        satisfied: satisfied,
+                        source_hashes: currentSourceHashes  // 传递源文档Hash列表
                     })
                 });
                 
@@ -808,6 +820,9 @@
             // 保存当前问题并重置反馈状态
             currentQuestion = prompt;
             feedbackSubmitted = false;
+            
+            // 隐藏之前的反馈按钮
+            document.getElementById('feedback-buttons').classList.remove('show');
 
             // UI 状态更新
             btn.disabled = true;

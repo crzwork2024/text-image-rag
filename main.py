@@ -108,6 +108,7 @@ class FeedbackRequest(BaseModel):
     question: str = Field(..., description="用户问题")
     answer: str = Field(..., description="系统答案")
     satisfied: bool = Field(..., description="用户是否满意")
+    source_hashes: Optional[List[str]] = Field(None, description="源文档Hash列表")
 
 
 class AdminLoginRequest(BaseModel):
@@ -121,6 +122,7 @@ class ManualCacheRequest(BaseModel):
     question: str = Field(..., description="问题文本", min_length=1)
     answer: str = Field(..., description="答案文本", min_length=1)
     quality_score: int = Field(10, description="质量分数", ge=0, le=10)
+    source_info: Optional[str] = Field(None, description="源文件信息（管理员手动填写）")
 
 
 class ClearCacheRequest(BaseModel):
@@ -557,7 +559,8 @@ async def query_rag(req: QueryRequest):
         return QueryResponse(
             answer=answer,
             best_score=score_summaries[0]["rerank_score"] if score_summaries else "0%",
-            sources_count=len(retrieved_sections)
+            sources_count=len(retrieved_sections),
+            source_hashes=unique_hashes  # 返回源文档的 parent_hash 列表
         )
 
     except Exception as e:
@@ -620,11 +623,16 @@ async def cache_feedback(req: FeedbackRequest):
     try:
         if req.satisfied:
             # 用户满意，添加到高质量缓存
+            # 将 source_hashes 转换为 JSON 字符串
+            import json
+            source_info = json.dumps(req.source_hashes) if req.source_hashes else None
+            
             semantic_cache.set(
                 req.question,
                 req.answer,
                 cache_type="confirmed",
-                quality_score=5
+                quality_score=5,
+                source_info=source_info
             )
             logger.info(f"✅ 用户反馈满意，已添加到高质量缓存: {req.question[:50]}")
             return {
@@ -823,7 +831,8 @@ async def add_manual_cache(
             req.question,
             req.answer,
             cache_type="manual",
-            quality_score=req.quality_score
+            quality_score=req.quality_score,
+            source_info=req.source_info  # 管理员填写的源文件信息
         )
         
         cache_id = semantic_cache._compute_hash(req.question)

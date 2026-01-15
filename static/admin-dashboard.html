@@ -182,11 +182,6 @@
             font-weight: 500;
         }
 
-        .badge-auto {
-            background: #dbeafe;
-            color: #1e40af;
-        }
-
         .badge-confirmed {
             background: #dcfce7;
             color: #15803d;
@@ -409,12 +404,13 @@
                 </p>
                 
                 <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                    <button class="btn btn-warning" onclick="clearCacheByType(['auto'])">
-                        清除自动缓存
-                    </button>
                     <button class="btn btn-danger" onclick="clearAllCache()">
                         清除所有缓存
                     </button>
+                </div>
+                
+                <div style="margin-top: 2rem; padding: 1rem; background: #f0f9ff; border-radius: 8px; color: #0369a1;">
+                    ℹ️ <strong>提示：</strong>所有缓存均为永久有效，不会自动过期。只有管理员手动删除或更新才会改变。
                 </div>
             </div>
         </div>
@@ -450,6 +446,13 @@
                 <div class="form-group">
                     <label for="quality-score">质量分数 (1-10)</label>
                     <input type="number" id="quality-score" min="1" max="10" value="10">
+                </div>
+                <div class="form-group">
+                    <label for="source-info">源文件信息（可选）</label>
+                    <textarea id="source-info" rows="3" placeholder="例如：book.md 第3章&#10;或者文档Hash：abc123, def456&#10;如果是用户反馈的问题，会自动填充源文档Hash"></textarea>
+                    <small style="color: #64748b; display: block; margin-top: 0.5rem;">
+                        💡 提示：记录答案来源，便于追踪和更新
+                    </small>
                 </div>
                 <button type="submit" class="btn btn-primary" style="width: 100%;">
                     添加到缓存
@@ -678,6 +681,8 @@
                                 <th>类型</th>
                                 <th>质量分</th>
                                 <th>命中次数</th>
+                                <th>创建时间</th>
+                                <th>源文件</th>
                                 <th>操作</th>
                             </tr>
                         </thead>
@@ -685,12 +690,38 @@
                 `;
                 
                 data.cached_questions.forEach(item => {
+                    // 格式化时间
+                    const createdDate = item.timestamp ? new Date(item.timestamp).toLocaleString('zh-CN', {
+                        year: 'numeric', month: '2-digit', day: '2-digit',
+                        hour: '2-digit', minute: '2-digit'
+                    }) : '-';
+                    
+                    // 解析源文件信息
+                    let sourceDisplay = '-';
+                    if (item.source_info) {
+                        try {
+                            const sources = JSON.parse(item.source_info);
+                            if (Array.isArray(sources) && sources.length > 0) {
+                                sourceDisplay = sources.map(h => h.substring(0, 8)).join(', ');
+                                if (sources.length > 3) {
+                                    sourceDisplay = sources.slice(0, 3).map(h => h.substring(0, 8)).join(', ') + `... (+${sources.length - 3})`;
+                                }
+                            } else {
+                                sourceDisplay = item.source_info.substring(0, 50) + (item.source_info.length > 50 ? '...' : '');
+                            }
+                        } catch (e) {
+                            sourceDisplay = item.source_info.substring(0, 50) + (item.source_info.length > 50 ? '...' : '');
+                        }
+                    }
+                    
                     html += `
                         <tr>
                             <td>${item.question}</td>
                             <td><span class="badge badge-${item.cache_type}">${item.cache_type}</span></td>
                             <td>${item.quality_score}</td>
                             <td>${item.hit_count}</td>
+                            <td style="font-size: 0.85rem; color: #64748b;">${createdDate}</td>
+                            <td style="font-size: 0.85rem; color: #64748b; font-family: monospace;" title="${item.source_info || ''}">${sourceDisplay}</td>
                             <td>
                                 <button class="btn btn-primary btn-sm" onclick="viewCachedAnswer('${item.cache_id}')" style="margin-right: 8px;">
                                     查看/编辑
@@ -743,7 +774,8 @@
                     document.getElementById('cache-question').value = cacheItem.question;
                     document.getElementById('cache-answer').value = cacheItem.answer;
                     document.getElementById('quality-score').value = cacheItem.quality_score || 10;
-                    
+                    document.getElementById('source-info').value = cacheItem.source_info || '';
+
                     // 存储当前正在编辑的缓存ID
                     modal.dataset.editingCacheId = cacheId;
                     modal.dataset.isEditing = 'true';
@@ -808,6 +840,7 @@
             const question = document.getElementById('cache-question').value;
             const answer = document.getElementById('cache-answer').value;
             const qualityScore = parseInt(document.getElementById('quality-score').value);
+            const sourceInfo = document.getElementById('source-info').value.trim();
             
             // 检查是否是编辑模式
             const isEditing = modal.dataset.isEditing === 'true';
@@ -841,7 +874,8 @@
                     body: JSON.stringify({
                         question: question,
                         answer: answer,
-                        quality_score: qualityScore
+                        quality_score: qualityScore,
+                        source_info: sourceInfo || null
                     })
                 });
                 
@@ -987,12 +1021,13 @@
         function closeAddModal() {
             const modal = document.getElementById('add-modal');
             modal.classList.remove('show');
-            
+
             // 清空表单
             document.getElementById('cache-question').value = '';
             document.getElementById('cache-answer').value = '';
             document.getElementById('quality-score').value = 10;
-            
+            document.getElementById('source-info').value = '';
+
             // 清除编辑状态
             delete modal.dataset.editingCacheId;
             delete modal.dataset.isEditing;

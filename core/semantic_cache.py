@@ -308,7 +308,8 @@ class SemanticCache:
         question: str,
         answer: str,
         cache_type: str = "auto",
-        quality_score: int = 0
+        quality_score: int = 0,
+        source_info: str = None
     ):
         """
         添加新的缓存条目
@@ -318,6 +319,7 @@ class SemanticCache:
             answer: 答案文本
             cache_type: 缓存类型 ("auto" | "confirmed" | "manual")
             quality_score: 质量分数 (0-10, manual=10, confirmed=5, auto=0)
+            source_info: 源文件信息（parent_hash列表的JSON字符串或管理员填写的文本）
         """
         if not self._available:
             return
@@ -349,7 +351,8 @@ class SemanticCache:
                 "hit_count": b"0",
                 "last_hit": b"",
                 "cache_type": cache_type.encode('utf-8'),
-                "quality_score": str(quality_score).encode('utf-8')
+                "quality_score": str(quality_score).encode('utf-8'),
+                "source_info": (source_info or "").encode('utf-8')  # 源文件信息
             }
 
             self.redis.hset(
@@ -363,9 +366,9 @@ class SemanticCache:
                 {cache_id: datetime.now().timestamp()}
             )
 
-            # 6. 设置 TTL
-            self.redis.expire(f"cache:question:{cache_id}", self.cache_ttl)
-
+            # 6. 缓存永久有效（不设置 TTL）
+            # 注意：只有管理员可以删除或更新缓存
+            
             # 7. 初始化热门问题统计（首次存储也算作1次访问）
             self.redis.zincrby("cache:popular", 1, question)
             
@@ -620,6 +623,7 @@ class SemanticCache:
                     timestamp = cached_data.get(b'timestamp', b'').decode('utf-8')
                     cache_type = cached_data.get(b'cache_type', b'auto').decode('utf-8')
                     quality_score = int(cached_data.get(b'quality_score', b'0').decode('utf-8'))
+                    source_info = cached_data.get(b'source_info', b'').decode('utf-8')
                     
                     result.append({
                         "cache_id": cache_id_str,
@@ -628,7 +632,8 @@ class SemanticCache:
                         "hit_count": hit_count,
                         "timestamp": timestamp,
                         "cache_type": cache_type,
-                        "quality_score": quality_score
+                        "quality_score": quality_score,
+                        "source_info": source_info
                     })
             
             return result
