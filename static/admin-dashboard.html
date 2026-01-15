@@ -337,6 +337,9 @@
         <div class="header-content">
             <h1>🛠️ 管理员后台</h1>
             <div class="header-actions">
+                <button class="btn btn-primary" onclick="openAddModal()" style="background: #10b981; color: white;">
+                    ➕ 手动添加缓存
+                </button>
                 <a href="/" class="btn btn-primary">返回首页</a>
                 <button class="btn btn-danger" onclick="logout()">登出</button>
             </div>
@@ -374,7 +377,12 @@
         <!-- 热门问题标签页 -->
         <div class="tab-content active" id="hot-questions">
             <div class="card">
-                <h2>热门问题管理</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h2 style="margin-bottom: 0;">热门问题管理</h2>
+                    <button class="btn btn-primary" onclick="openAddModal()" style="background: #10b981;">
+                        ➕ 手动添加缓存
+                    </button>
+                </div>
                 <div id="hot-questions-content" class="loading">加载中...</div>
             </div>
         </div>
@@ -382,7 +390,12 @@
         <!-- 缓存列表标签页 -->
         <div class="tab-content" id="cache-list">
             <div class="card">
-                <h2>缓存问题列表</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h2 style="margin-bottom: 0;">缓存问题列表</h2>
+                    <button class="btn btn-primary" onclick="openAddModal()" style="background: #10b981;">
+                        ➕ 手动添加缓存
+                    </button>
+                </div>
                 <div id="cache-list-content" class="loading">加载中...</div>
             </div>
         </div>
@@ -945,6 +958,25 @@
                 console.error('清除失败:', error);
                 showToast('❌ 清除失败', 'error');
             }
+        }
+
+        // 打开手动添加模态框
+        function openAddModal() {
+            const modal = document.getElementById('add-modal');
+            const modalTitle = modal.querySelector('.modal-header h3');
+            modalTitle.textContent = '手动添加到缓存';
+            
+            // 清空表单
+            document.getElementById('cache-question').value = '';
+            document.getElementById('cache-answer').value = '';
+            document.getElementById('quality-score').value = 10;
+            
+            // 清除编辑状态
+            delete modal.dataset.editingCacheId;
+            delete modal.dataset.isEditing;
+            
+            // 显示模态框
+            modal.classList.add('show');
         }
 
         // 关闭模态框
