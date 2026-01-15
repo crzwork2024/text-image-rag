@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>管理员登录 - RAG 智能问答系统</title>
+    <title>Admin Login - RAG Intelligent Q&A System</title>
     <style>
         * {
             margin: 0;
@@ -120,27 +120,27 @@
 </head>
 <body>
     <div class="login-container">
-        <h1>🔐 管理员登录</h1>
-        <p class="subtitle">RAG 智能问答系统</p>
+        <h1>🔐 Admin Login</h1>
+        <p class="subtitle">RAG Intelligent Q&A System</p>
         
         <div class="error-message" id="error-message"></div>
         
         <form onsubmit="handleLogin(event)">
             <div class="form-group">
-                <label for="username">用户名</label>
+                <label for="username">Username</label>
                 <input type="text" id="username" name="username" required autocomplete="username">
             </div>
             
             <div class="form-group">
-                <label for="password">密码</label>
+                <label for="password">Password</label>
                 <input type="password" id="password" name="password" required autocomplete="current-password">
             </div>
             
-            <button type="submit" class="btn-login" id="btn-login">登录</button>
+            <button type="submit" class="btn-login" id="btn-login">Login</button>
         </form>
         
         <div class="back-link">
-            <a href="/">← 返回首页</a>
+            <a href="/">← Back to Home</a>
         </div>
     </div>
 
@@ -153,9 +153,9 @@
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
             
-            // 禁用按钮
+            // Disable button
             btn.disabled = true;
-            btn.textContent = '登录中...';
+            btn.textContent = 'Logging in...';
             errorMsg.style.display = 'none';
             
             try {
@@ -168,33 +168,33 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    // 登录成功，保存token并跳转
+                    // Login successful, save token and redirect
                     localStorage.setItem('admin_token', data.token);
                     localStorage.setItem('admin_expires', data.expires_at);
                     window.location.href = '/admin-dashboard.html';
                 } else {
-                    // 登录失败
-                    errorMsg.textContent = data.detail || '登录失败，请检查用户名和密码';
+                    // Login failed
+                    errorMsg.textContent = data.detail || 'Login failed, please check username and password';
                     errorMsg.style.display = 'block';
                 }
             } catch (error) {
-                console.error('登录错误:', error);
-                errorMsg.textContent = '网络错误，请稍后重试';
+                console.error('Login error:', error);
+                errorMsg.textContent = 'Network error, please try again later';
                 errorMsg.style.display = 'block';
             } finally {
                 btn.disabled = false;
-                btn.textContent = '登录';
+                btn.textContent = 'Login';
             }
         }
         
-        // 检查是否已登录
+        // Check if already logged in
         const token = localStorage.getItem('admin_token');
         const expires = localStorage.getItem('admin_expires');
         
         if (token && expires) {
             const expiresDate = new Date(expires);
             if (expiresDate > new Date()) {
-                // token还没过期，直接跳转到后台
+                // Token valid, redirect to dashboard
                 window.location.href = '/admin-dashboard.html';
             }
         }

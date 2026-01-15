@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>管理员后台 - RAG 智能问答系统</title>
+    <title>Admin Dashboard - RAG Intelligent Q&A System</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         * {
@@ -330,132 +330,138 @@
 <body>
     <div class="header">
         <div class="header-content">
-            <h1>🛠️ 管理员后台</h1>
+            <h1>🛠️ Admin Dashboard</h1>
             <div class="header-actions">
                 <button class="btn btn-primary" onclick="openAddModal()" style="background: #10b981; color: white;">
-                    ➕ 手动添加缓存
+                    ➕ Manually Add Cache
                 </button>
-                <a href="/" class="btn btn-primary">返回首页</a>
-                <button class="btn btn-danger" onclick="logout()">登出</button>
+                <a href="/" class="btn btn-primary">Back to Home</a>
+                <button class="btn btn-danger" onclick="logout()">Logout</button>
             </div>
         </div>
     </div>
 
     <div class="container">
-        <!-- 统计卡片 -->
+        <!-- Statistics Cards -->
         <div class="stats-grid" id="stats-grid">
             <div class="stat-card">
                 <div class="stat-value" id="total-cache">-</div>
-                <div class="stat-label">总缓存数</div>
+                <div class="stat-label">Total Cached</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="total-hits">-</div>
-                <div class="stat-label">总命中次数</div>
+                <div class="stat-label">Total Hits</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="manual-cache">-</div>
-                <div class="stat-label">手动缓存</div>
+                <div class="stat-label">Manual Cache</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="confirmed-cache">-</div>
-                <div class="stat-label">用户确认</div>
+                <div class="stat-label">User Confirmed</div>
             </div>
         </div>
 
-        <!-- 标签页 -->
-        <div class="tabs">
-            <button class="tab active" onclick="switchTab('hot-questions')">🔥 热门问题</button>
-            <button class="tab" onclick="switchTab('cache-list')">📦 缓存列表</button>
-            <button class="tab" onclick="switchTab('cache-management')">🗑️ 缓存管理</button>
+        <!-- Most Frequent Questions Table -->
+        <div class="card" style="margin-bottom: 2rem;">
+            <h2>📊 Most Frequent Questions (Top 5)</h2>
+            <div id="top-questions-stats" class="loading">Loading...</div>
         </div>
 
-        <!-- 热门问题标签页 -->
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('hot-questions')">🔥 Hot Questions</button>
+            <button class="tab" onclick="switchTab('cache-list')">📦 Cache List</button>
+            <button class="tab" onclick="switchTab('cache-management')">🗑️ Cache Management</button>
+        </div>
+
+        <!-- Hot Questions Tab -->
         <div class="tab-content active" id="hot-questions">
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-                    <h2 style="margin-bottom: 0;">热门问题管理</h2>
+                    <h2 style="margin-bottom: 0;">Hot Questions Management</h2>
                     <button class="btn btn-primary" onclick="openAddModal()" style="background: #10b981;">
-                        ➕ 手动添加缓存
+                        ➕ Manually Add Cache
                     </button>
                 </div>
-                <div id="hot-questions-content" class="loading">加载中...</div>
+                <div id="hot-questions-content" class="loading">Loading...</div>
             </div>
         </div>
 
-        <!-- 缓存列表标签页 -->
+        <!-- Cache List Tab -->
         <div class="tab-content" id="cache-list">
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-                    <h2 style="margin-bottom: 0;">缓存问题列表</h2>
+                    <h2 style="margin-bottom: 0;">Cached Questions List</h2>
                     <button class="btn btn-primary" onclick="openAddModal()" style="background: #10b981;">
-                        ➕ 手动添加缓存
+                        ➕ Manually Add Cache
                     </button>
                 </div>
-                <div id="cache-list-content" class="loading">加载中...</div>
+                <div id="cache-list-content" class="loading">Loading...</div>
             </div>
         </div>
 
-        <!-- 缓存管理标签页 -->
+        <!-- Cache Management Tab -->
         <div class="tab-content" id="cache-management">
             <div class="card">
-                <h2>缓存管理操作</h2>
+                <h2>Cache Management Operations</h2>
                 <p style="margin-bottom: 2rem; color: #64748b;">
-                    ⚠️ 危险操作：清除缓存将无法恢复，请谨慎操作！
+                    ⚠️ DANGER: Clearing cache is irreversible. Proceed with caution!
                 </p>
                 
                 <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
                     <button class="btn btn-danger" onclick="clearAllCache()">
-                        清除所有缓存
+                        Clear All Cache
                     </button>
                 </div>
                 
                 <div style="margin-top: 2rem; padding: 1rem; background: #f0f9ff; border-radius: 8px; color: #0369a1;">
-                    ℹ️ <strong>提示：</strong>所有缓存均为永久有效，不会自动过期。只有管理员手动删除或更新才会改变。
+                    ℹ️ <strong>Note:</strong> All cache entries are permanent and do not expire automatically. They only change if manually deleted or updated by an admin.
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- 查看问答模态框 -->
+    <!-- View Q&A Modal -->
     <div class="modal" id="view-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>查看问答</h3>
+                <h3>View Q&A</h3>
                 <button class="btn-close" onclick="closeModal()">&times;</button>
             </div>
             <div id="modal-body"></div>
         </div>
     </div>
 
-    <!-- 手动添加缓存模态框 -->
+    <!-- Add Cache Modal -->
     <div class="modal" id="add-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>手动添加到缓存</h3>
+                <h3>Manually Add to Cache</h3>
                 <button class="btn-close" onclick="closeAddModal()">&times;</button>
             </div>
             <form onsubmit="submitManualCache(event)">
                 <div class="form-group">
-                    <label for="cache-question">问题</label>
+                    <label for="cache-question">Question</label>
                     <textarea id="cache-question" required></textarea>
                 </div>
                 <div class="form-group">
-                    <label for="cache-answer">答案</label>
+                    <label for="cache-answer">Answer</label>
                     <textarea id="cache-answer" required></textarea>
                 </div>
                 <div class="form-group">
-                    <label for="quality-score">质量分数 (1-10)</label>
+                    <label for="quality-score">Quality Score (1-10)</label>
                     <input type="number" id="quality-score" min="1" max="10" value="10">
                 </div>
                 <div class="form-group">
-                    <label for="source-info">源文件信息（可选）</label>
-                    <textarea id="source-info" rows="3" placeholder="例如：book.md 第3章&#10;或者文档Hash：abc123, def456&#10;如果是用户反馈的问题，会自动填充源文档Hash"></textarea>
+                    <label for="source-info">Source Info (Optional)</label>
+                    <textarea id="source-info" rows="3" placeholder="e.g., book.md Chapter 3&#10;or document Hash: abc123, def456&#10;Auto-filled for user feedback."></textarea>
                     <small style="color: #64748b; display: block; margin-top: 0.5rem;">
-                        💡 提示：记录答案来源，便于追踪和更新
+                        💡 Tip: Record the answer source for tracking and updates.
                     </small>
                 </div>
                 <button type="submit" class="btn btn-primary" style="width: 100%;">
-                    添加到缓存
+                    Add to Cache
                 </button>
             </form>
         </div>
@@ -464,7 +470,7 @@
     <script>
         let currentToken = '';
 
-        // 检查登录状态
+        // Check Auth
         function checkAuth() {
             const token = localStorage.getItem('admin_token');
             const expires = localStorage.getItem('admin_expires');
@@ -486,7 +492,7 @@
             return token;
         }
 
-        // 登出
+        // Logout
         async function logout() {
             try {
                 await fetch('/admin/logout', {
@@ -496,7 +502,7 @@
                     }
                 });
             } catch (error) {
-                console.error('登出错误:', error);
+                console.error('Logout error:', error);
             }
             
             localStorage.removeItem('admin_token');
@@ -504,7 +510,7 @@
             window.location.href = '/admin-login.html';
         }
 
-        // 显示提示消息
+        // Show Toast
         function showToast(message, type = 'success') {
             const toast = document.createElement('div');
             toast.className = 'toast';
@@ -518,21 +524,21 @@
             }, 3000);
         }
 
-        // 切换标签页
+        // Switch Tab
         function switchTab(tabName) {
-            // 更新标签按钮状态
+            // Update Tab Buttons
             document.querySelectorAll('.tab').forEach(tab => {
                 tab.classList.remove('active');
             });
             event.target.classList.add('active');
             
-            // 更新标签内容
+            // Update Tab Content
             document.querySelectorAll('.tab-content').forEach(content => {
                 content.classList.remove('active');
             });
             document.getElementById(tabName).classList.add('active');
             
-            // 加载对应数据
+            // Load Data
             if (tabName === 'hot-questions') {
                 loadHotQuestions();
             } else if (tabName === 'cache-list') {
@@ -540,7 +546,7 @@
             }
         }
 
-        // 加载统计数据
+        // Load Stats
         async function loadStats() {
             try {
                 const response = await fetch('/cache/stats', {
@@ -555,16 +561,16 @@
                 document.getElementById('manual-cache').textContent = data.cache_by_type?.manual || 0;
                 document.getElementById('confirmed-cache').textContent = data.cache_by_type?.confirmed || 0;
             } catch (error) {
-                console.error('加载统计失败:', error);
+                console.error('Failed to load stats:', error);
             }
         }
 
-        // 处理认证失败
+        // Handle Auth Error
         function handleAuthError(response) {
             if (response.status === 401) {
                 localStorage.removeItem('admin_token');
                 localStorage.removeItem('admin_expires');
-                showToast('❌ 登录已过期，请重新登录', 'error');
+                showToast('❌ Session expired, please login again', 'error');
                 setTimeout(() => {
                     window.location.href = '/admin-login.html';
                 }, 1500);
@@ -573,10 +579,74 @@
             return false;
         }
 
-        // 加载热门问题
+        // Load Top Questions Stats
+        async function loadTopStats() {
+            const container = document.getElementById('top-questions-stats');
+            
+            try {
+                const response = await fetch('/admin/hot-questions?limit=5', {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+                
+                if (handleAuthError(response)) return;
+                
+                const data = await response.json();
+                
+                if (!data.hot_questions || data.hot_questions.length === 0) {
+                    container.innerHTML = '<p style="text-align: center; color: #64748b;">No data available</p>';
+                    return;
+                }
+                
+                let html = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 60px;">Rank</th>
+                                <th>Question</th>
+                                <th style="width: 100px;">Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                data.hot_questions.forEach((item, index) => {
+                    html += `
+                        <tr>
+                            <td>
+                                <span style="
+                                    display: inline-block; 
+                                    width: 24px; 
+                                    height: 24px; 
+                                    background: ${index < 3 ? '#ef4444' : '#f1f5f9'}; 
+                                    color: ${index < 3 ? 'white' : '#64748b'}; 
+                                    border-radius: 50%; 
+                                    text-align: center; 
+                                    line-height: 24px; 
+                                    font-size: 12px;
+                                    font-weight: bold;
+                                ">${index + 1}</span>
+                            </td>
+                            <td>${item.question}</td>
+                            <td style="font-weight: bold; color: #667eea;">${item.count}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += '</tbody></table>';
+                container.innerHTML = html;
+                
+            } catch (error) {
+                console.error('Failed to load top stats:', error);
+                container.innerHTML = '<p style="text-align: center; color: #ef4444;">Load failed</p>';
+            }
+        }
+
+        // Load Hot Questions
         async function loadHotQuestions() {
             const container = document.getElementById('hot-questions-content');
-            container.innerHTML = '<div class="loading">加载中...</div>';
+            container.innerHTML = '<div class="loading">Loading...</div>';
             
             try {
                 const response = await fetch('/admin/hot-questions?limit=50', {
@@ -586,7 +656,7 @@
                 });
                 
                 if (handleAuthError(response)) return;
-                if (!response.ok) throw new Error('加载失败');
+                if (!response.ok) throw new Error('Load failed');
                 
                 const data = await response.json();
                 
@@ -594,7 +664,7 @@
                     container.innerHTML = `
                         <div class="empty-state">
                             <div class="empty-state-icon">📭</div>
-                            <p>暂无热门问题</p>
+                            <p>No hot questions</p>
                         </div>
                     `;
                     return;
@@ -604,10 +674,10 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>问题</th>
-                                <th>提问次数</th>
-                                <th>缓存状态</th>
-                                <th>操作</th>
+                                <th>Question</th>
+                                <th>Count</th>
+                                <th>Cache Status</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -616,7 +686,7 @@
                 data.hot_questions.forEach(item => {
                     const cacheTypeText = item.cache_type ? 
                         `<span class="badge badge-${item.cache_type}">${item.cache_type}</span>` : 
-                        '未缓存';
+                        'Not Cached';
                     
                     html += `
                         <tr>
@@ -626,10 +696,10 @@
                             <td>
                                 ${!item.cached ? 
                                     `<button class="btn btn-primary btn-sm" onclick="viewAndCache('${item.question.replace(/'/g, "\\'")}')">
-                                        查看并缓存
+                                        View & Cache
                                     </button>` : 
                                     `<button class="btn btn-sm" onclick="viewCachedAnswer('${item.cache_id}')">
-                                        查看答案
+                                        View Answer
                                     </button>`
                                 }
                             </td>
@@ -641,15 +711,15 @@
                 container.innerHTML = html;
                 
             } catch (error) {
-                console.error('加载热门问题失败:', error);
-                container.innerHTML = '<div class="empty-state">加载失败，请刷新重试</div>';
+                console.error('Failed to load hot questions:', error);
+                container.innerHTML = '<div class="empty-state">Load failed, please refresh</div>';
             }
         }
 
-        // 加载缓存列表
+        // Load Cache List
         async function loadCacheList() {
             const container = document.getElementById('cache-list-content');
-            container.innerHTML = '<div class="loading">加载中...</div>';
+            container.innerHTML = '<div class="loading">Loading...</div>';
             
             try {
                 const response = await fetch('/admin/cache/list?limit=1000', {
@@ -659,7 +729,7 @@
                 });
                 
                 if (handleAuthError(response)) return;
-                if (!response.ok) throw new Error('加载失败');
+                if (!response.ok) throw new Error('Load failed');
                 
                 const data = await response.json();
                 
@@ -667,7 +737,7 @@
                     container.innerHTML = `
                         <div class="empty-state">
                             <div class="empty-state-icon">📭</div>
-                            <p>暂无缓存数据</p>
+                            <p>No cached data</p>
                         </div>
                     `;
                     return;
@@ -677,26 +747,26 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>问题</th>
-                                <th>类型</th>
-                                <th>质量分</th>
-                                <th>命中次数</th>
-                                <th>创建时间</th>
-                                <th>源文件</th>
-                                <th>操作</th>
+                                <th>Question</th>
+                                <th>Type</th>
+                                <th>Score</th>
+                                <th>Hits</th>
+                                <th>Created At</th>
+                                <th>Source</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                 `;
                 
                 data.cached_questions.forEach(item => {
-                    // 格式化时间
-                    const createdDate = item.timestamp ? new Date(item.timestamp).toLocaleString('zh-CN', {
+                    // Format Time
+                    const createdDate = item.timestamp ? new Date(item.timestamp).toLocaleString('en-US', {
                         year: 'numeric', month: '2-digit', day: '2-digit',
                         hour: '2-digit', minute: '2-digit'
                     }) : '-';
                     
-                    // 解析源文件信息
+                    // Parse Source Info
                     let sourceDisplay = '-';
                     if (item.source_info) {
                         try {
@@ -724,10 +794,10 @@
                             <td style="font-size: 0.85rem; color: #64748b; font-family: monospace;" title="${item.source_info || ''}">${sourceDisplay}</td>
                             <td>
                                 <button class="btn btn-primary btn-sm" onclick="viewCachedAnswer('${item.cache_id}')" style="margin-right: 8px;">
-                                    查看/编辑
+                                    View/Edit
                                 </button>
                                 <button class="btn btn-danger btn-sm" onclick="deleteCacheItem('${item.cache_id}')">
-                                    删除
+                                    Delete
                                 </button>
                             </td>
                         </tr>
@@ -738,24 +808,24 @@
                 container.innerHTML = html;
                 
             } catch (error) {
-                console.error('加载缓存列表失败:', error);
-                container.innerHTML = '<div class="empty-state">加载失败，请刷新重试</div>';
+                console.error('Failed to load cache list:', error);
+                container.innerHTML = '<div class="empty-state">Load failed, please refresh</div>';
             }
         }
 
-        // 查看已缓存的答案
+        // View Cached Answer
         async function viewCachedAnswer(cacheId) {
             const modal = document.getElementById('add-modal');
             const modalTitle = modal.querySelector('.modal-header h3');
-            modalTitle.textContent = '查看和编辑缓存';
+            modalTitle.textContent = 'View and Edit Cache';
             
-            // 显示加载状态
-            document.getElementById('cache-question').value = '加载中...';
-            document.getElementById('cache-answer').value = '加载中...';
+            // Show Loading
+            document.getElementById('cache-question').value = 'Loading...';
+            document.getElementById('cache-answer').value = 'Loading...';
             modal.classList.add('show');
             
             try {
-                // 从缓存列表API获取详情
+                // Get details
                 const response = await fetch('/admin/cache/list?limit=1000', {
                     headers: {
                         'Authorization': `Bearer ${currentToken}`
@@ -776,40 +846,40 @@
                     document.getElementById('quality-score').value = cacheItem.quality_score || 10;
                     document.getElementById('source-info').value = cacheItem.source_info || '';
 
-                    // 存储当前正在编辑的缓存ID
+                    // Store editing ID
                     modal.dataset.editingCacheId = cacheId;
                     modal.dataset.isEditing = 'true';
                 } else {
-                    showToast('❌ 未找到缓存数据', 'error');
+                    showToast('❌ Cache data not found', 'error');
                     closeAddModal();
                 }
                 
             } catch (error) {
-                console.error('加载缓存详情失败:', error);
-                showToast('❌ 加载失败', 'error');
+                console.error('Failed to load cache details:', error);
+                showToast('❌ Load failed', 'error');
                 closeAddModal();
             }
         }
 
-        // 查看并缓存
+        // View and Cache
         async function viewAndCache(question) {
             const modal = document.getElementById('add-modal');
             const modalTitle = modal.querySelector('.modal-header h3');
-            modalTitle.textContent = '查看并添加到缓存';
+            modalTitle.textContent = 'View and Add to Cache';
             
-            // 清空编辑状态
+            // Clear editing state
             delete modal.dataset.editingCacheId;
             delete modal.dataset.isEditing;
             
-            // 设置问题
+            // Set question
             document.getElementById('cache-question').value = question;
-            document.getElementById('cache-answer').value = '正在生成答案...';
+            document.getElementById('cache-answer').value = 'Generating answer...';
             document.getElementById('quality-score').value = 10;
             
             modal.classList.add('show');
             
             try {
-                // 执行一次查询获取答案
+                // Execute query
                 const response = await fetch('/query', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -822,17 +892,17 @@
                 
                 const data = await response.json();
                 
-                // 填充答案到文本框，让用户可以编辑
+                // Fill answer
                 document.getElementById('cache-answer').value = data.answer;
                 
             } catch (error) {
-                console.error('查询失败:', error);
-                document.getElementById('cache-answer').value = '查询失败，请手动输入答案或重试';
-                showToast('❌ 自动查询失败，请手动输入答案', 'error');
+                console.error('Query failed:', error);
+                document.getElementById('cache-answer').value = 'Query failed, please enter answer manually or retry';
+                showToast('❌ Auto-query failed, please enter answer manually', 'error');
             }
         }
 
-        // 提交手动缓存表单
+        // Submit Manual Cache
         async function submitManualCache(event) {
             event.preventDefault();
             
@@ -842,12 +912,12 @@
             const qualityScore = parseInt(document.getElementById('quality-score').value);
             const sourceInfo = document.getElementById('source-info').value.trim();
             
-            // 检查是否是编辑模式
+            // Check editing mode
             const isEditing = modal.dataset.isEditing === 'true';
             const editingCacheId = modal.dataset.editingCacheId;
             
             try {
-                // 如果是编辑模式，先删除旧缓存
+                // Delete old if editing
                 if (isEditing && editingCacheId) {
                     const deleteResponse = await fetch(`/admin/cache/${editingCacheId}`, {
                         method: 'DELETE',
@@ -859,12 +929,12 @@
                     if (handleAuthError(deleteResponse)) return;
                     
                     if (!deleteResponse.ok) {
-                        showToast('❌ 删除旧缓存失败', 'error');
+                        showToast('❌ Failed to delete old cache', 'error');
                         return;
                     }
                 }
                 
-                // 添加新缓存
+                // Add new cache
                 const response = await fetch('/admin/cache/add', {
                     method: 'POST',
                     headers: {
@@ -882,24 +952,24 @@
                 if (handleAuthError(response)) return;
                 
                 if (response.ok) {
-                    showToast(isEditing ? '✅ 缓存已更新' : '✅ 已添加到缓存');
+                    showToast(isEditing ? '✅ Cache updated' : '✅ Added to cache');
                     closeAddModal();
                     loadHotQuestions();
                     loadCacheList();
                     loadStats();
                 } else {
                     const errorData = await response.json();
-                    showToast(`❌ ${errorData.detail || '操作失败'}`, 'error');
+                    showToast(`❌ ${errorData.detail || 'Operation failed'}`, 'error');
                 }
             } catch (error) {
-                console.error('操作失败:', error);
-                showToast('❌ 操作失败', 'error');
+                console.error('Operation failed:', error);
+                showToast('❌ Operation failed', 'error');
             }
         }
 
-        // 删除缓存项
+        // Delete Cache Item
         async function deleteCacheItem(cacheId) {
-            if (!confirm('确定要删除此缓存吗？')) return;
+            if (!confirm('Are you sure you want to delete this cache?')) return;
             
             try {
                 const response = await fetch(`/admin/cache/${cacheId}`, {
@@ -912,22 +982,22 @@
                 if (handleAuthError(response)) return;
                 
                 if (response.ok) {
-                    showToast('✅ 已删除缓存');
+                    showToast('✅ Cache deleted');
                     loadCacheList();
                     loadStats();
                 } else {
-                    showToast('❌ 删除失败', 'error');
+                    showToast('❌ Delete failed', 'error');
                 }
             } catch (error) {
-                console.error('删除失败:', error);
-                showToast('❌ 删除失败', 'error');
+                console.error('Delete failed:', error);
+                showToast('❌ Delete failed', 'error');
             }
         }
 
-        // 清除指定类型的缓存
+        // Clear Cache By Type (unused in UI currently but good to keep)
         async function clearCacheByType(types) {
             const typeText = types.join(', ');
-            if (!confirm(`确定要清除 ${typeText} 类型的所有缓存吗？此操作无法恢复！`)) return;
+            if (!confirm(`Are you sure you want to clear all cache of type ${typeText}? This cannot be undone!`)) return;
             
             try {
                 const response = await fetch('/admin/cache/clear', {
@@ -947,22 +1017,22 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    showToast(`✅ 已清除 ${data.deleted_count} 条缓存`);
+                    showToast(`✅ Cleared ${data.deleted_count} cache entries`);
                     loadStats();
                     loadCacheList();
                 } else {
-                    showToast('❌ 清除失败', 'error');
+                    showToast('❌ Clear failed', 'error');
                 }
             } catch (error) {
-                console.error('清除失败:', error);
-                showToast('❌ 清除失败', 'error');
+                console.error('Clear failed:', error);
+                showToast('❌ Clear failed', 'error');
             }
         }
 
-        // 清除所有缓存
+        // Clear All Cache
         async function clearAllCache() {
-            if (!confirm('⚠️ 警告：确定要清除所有缓存吗？此操作无法恢复！')) return;
-            if (!confirm('请再次确认：真的要删除所有缓存数据吗？')) return;
+            if (!confirm('⚠️ Warning: Are you sure you want to clear ALL cache? This cannot be undone!')) return;
+            if (!confirm('Please confirm again: Do you really want to delete ALL cache data?')) return;
             
             try {
                 const response = await fetch('/admin/cache/clear', {
@@ -982,38 +1052,38 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    showToast(`✅ 已清除所有缓存 (${data.deleted_count} 条)`);
+                    showToast(`✅ All cache cleared (${data.deleted_count} entries)`);
                     loadStats();
                     loadCacheList();
                 } else {
-                    showToast('❌ 清除失败', 'error');
+                    showToast('❌ Clear failed', 'error');
                 }
             } catch (error) {
-                console.error('清除失败:', error);
-                showToast('❌ 清除失败', 'error');
+                console.error('Clear failed:', error);
+                showToast('❌ Clear failed', 'error');
             }
         }
 
-        // 打开手动添加模态框
+        // Open Add Modal
         function openAddModal() {
             const modal = document.getElementById('add-modal');
             const modalTitle = modal.querySelector('.modal-header h3');
-            modalTitle.textContent = '手动添加到缓存';
+            modalTitle.textContent = 'Manually Add to Cache';
             
-            // 清空表单
+            // Clear form
             document.getElementById('cache-question').value = '';
             document.getElementById('cache-answer').value = '';
             document.getElementById('quality-score').value = 10;
             
-            // 清除编辑状态
+            // Clear editing state
             delete modal.dataset.editingCacheId;
             delete modal.dataset.isEditing;
             
-            // 显示模态框
+            // Show modal
             modal.classList.add('show');
         }
 
-        // 关闭模态框
+        // Close Modal
         function closeModal() {
             document.getElementById('view-modal').classList.remove('show');
         }
@@ -1022,25 +1092,26 @@
             const modal = document.getElementById('add-modal');
             modal.classList.remove('show');
 
-            // 清空表单
+            // Clear form
             document.getElementById('cache-question').value = '';
             document.getElementById('cache-answer').value = '';
             document.getElementById('quality-score').value = 10;
             document.getElementById('source-info').value = '';
 
-            // 清除编辑状态
+            // Clear editing state
             delete modal.dataset.editingCacheId;
             delete modal.dataset.isEditing;
             
-            // 恢复标题
-            modal.querySelector('.modal-header h3').textContent = '手动添加到缓存';
+            // Restore title
+            modal.querySelector('.modal-header h3').textContent = 'Manually Add to Cache';
         }
 
-        // 页面加载
+        // Page Load
         window.onload = function() {
             if (checkAuth()) {
                 loadStats();
                 loadHotQuestions();
+                loadTopStats();
             }
         };
     </script>
