@@ -1,7 +1,7 @@
 """
-LLM 客户端模块 - RAG 智能问答系统
-作者：RAG 项目团队
-描述：与 SiliconFlow LLM API 交互，生成回答
+LLM Client Module - RAG Intelligent Q&A System
+Author: RAG Project Team
+Description: Interacts with SiliconFlow LLM API to generate answers.
 """
 
 import requests
@@ -14,17 +14,17 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    """LLM 客户端 - 负责调用大语言模型生成回答"""
+    """LLM Client - Responsible for calling Large Language Model to generate answers"""
 
     def __init__(self):
-        """初始化 LLM 客户端"""
+        """Initialize LLM Client"""
         self.api_key = config.SILICONFLOW_API_KEY
         self.api_url = config.SILICONFLOW_API_URL
         self.model_id = config.SILICONFLOW_MODEL_ID
         self.temperature = config.LLM_TEMPERATURE
 
         if not self.api_key:
-            logger.warning("未配置 SILICONFLOW_API_KEY，LLM 功能将不可用")
+            logger.warning("SILICONFLOW_API_KEY not configured, LLM feature unavailable")
 
     def generate(
         self,
@@ -35,46 +35,46 @@ class LLMClient:
         max_tokens: Optional[int] = None
     ) -> str:
         """
-        生成回答
+        Generate Answer
 
-        参数:
-            context: 上下文信息
-            user_query: 用户问题
-            system_prompt: 系统提示词，默认使用配置值
-            temperature: 温度参数，默认使用配置值
-            max_tokens: 最大生成token数，默认不限制
+        Args:
+            context: Context information
+            user_query: User question
+            system_prompt: System prompt, defaults to config
+            temperature: Temperature parameter, defaults to config
+            max_tokens: Max tokens to generate, defaults to None (unlimited)
 
-        返回:
-            生成的回答文本
+        Returns:
+            Generated answer text
 
-        异常:
-            LLMAPIError: API 调用失败时抛出
+        Raises:
+            LLMAPIError: If API call fails
         """
         if not self.api_key:
-            error_msg = "LLM API 密钥未配置"
+            error_msg = "LLM API Key not configured"
             logger.error(error_msg)
             raise LLMAPIError(error_msg)
 
-        # 使用默认值
+        # Use defaults
         if system_prompt is None:
             system_prompt = config.SYSTEM_PROMPT
         if temperature is None:
             temperature = self.temperature
 
-        # 构建消息
+        # Build messages
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"上下文:\n{context}\n\n问题: {user_query}"}
+            {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {user_query}"}
         ]
 
-        # 构建请求载荷
+        # Build request payload
         payload = {
             "model": self.model_id,
             "messages": messages,
             "temperature": temperature
         }
 
-        # 如果指定了max_tokens，添加到payload
+        # If max_tokens is specified, add to payload
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
 
@@ -84,11 +84,11 @@ class LLMClient:
         }
 
         try:
-            logger.info(f"正在调用 LLM API (模型: {self.model_id})")
-            logger.debug(f"问题长度: {len(user_query)} 字符")
-            logger.debug(f"上下文长度: {len(context)} 字符")
+            logger.info(f"Calling LLM API (Model: {self.model_id})")
+            logger.debug(f"Question length: {len(user_query)} chars")
+            logger.debug(f"Context length: {len(context)} chars")
 
-            # 发送请求
+            # Send request
             response = requests.post(
                 self.api_url,
                 headers=headers,
@@ -97,61 +97,61 @@ class LLMClient:
             )
             response.raise_for_status()
 
-            # 解析响应
+            # Parse response
             result = response.json()
             answer = result["choices"][0]["message"]["content"].strip()
 
-            logger.info(f"LLM 回答生成成功，长度: {len(answer)} 字符")
+            logger.info(f"LLM Answer generated successfully, length: {len(answer)} chars")
             return answer
 
         except requests.exceptions.Timeout:
-            error_msg = "LLM API 请求超时"
+            error_msg = "LLM API Request Timeout"
             logger.error(error_msg)
             raise LLMAPIError(error_msg)
 
         except requests.exceptions.HTTPError as e:
-            error_msg = f"LLM API HTTP 错误: {e.response.status_code}"
-            logger.error(f"{error_msg}, 响应: {e.response.text}")
+            error_msg = f"LLM API HTTP Error: {e.response.status_code}"
+            logger.error(f"{error_msg}, Response: {e.response.text}")
             raise LLMAPIError(error_msg, details=e.response.text)
 
         except KeyError as e:
-            error_msg = f"LLM API 响应格式错误: 缺少字段 {str(e)}"
+            error_msg = f"LLM API Response Format Error: Missing field {str(e)}"
             logger.error(error_msg)
             raise LLMAPIError(error_msg)
 
         except Exception as e:
-            error_msg = f"LLM API 调用失败: {str(e)}"
+            error_msg = f"LLM API Call Failed: {str(e)}"
             logger.error(error_msg)
             raise LLMAPIError(error_msg, details=str(e))
 
     def is_available(self) -> bool:
         """
-        检查 LLM 服务是否可用
+        Check if LLM service is available
 
-        返回:
-            True 如果配置完整，否则 False
+        Returns:
+            True if config is complete, else False
         """
         return bool(self.api_key and self.api_url and self.model_id)
 
 
-# 全局 LLM 客户端实例（单例模式）
+# Global LLM Client Instance (Singleton)
 llm_client = LLMClient()
 
 
-# 向后兼容的函数接口
+# Backwards compatibility interface
 def call_llm(context: str, user_query: str) -> str:
     """
-    调用 LLM 生成回答（向后兼容接口）
+    Call LLM to generate answer (Legacy Interface)
 
-    参数:
-        context: 上下文信息
-        user_query: 用户问题
+    Args:
+        context: Context info
+        user_query: User question
 
-    返回:
-        生成的回答文本
+    Returns:
+        Generated answer text
     """
     try:
         return llm_client.generate(context, user_query)
     except LLMAPIError as e:
-        logger.error(f"LLM 调用失败: {e.message}")
-        return "错误：无法生成回答，请稍后重试。"
+        logger.error(f"LLM Call Failed: {e.message}")
+        return "Error: Unable to generate answer, please try again later."

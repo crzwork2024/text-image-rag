@@ -1,40 +1,40 @@
 # ====================================
-# RAG 智能问答系统 - 依赖清单
+# RAG Intelligent Q&A System - Dependencies
 # ====================================
 
-# Web 框架
+# Web Framework
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
 python-multipart==0.0.20
 
-# 环境变量管理
+# Environment Management
 python-dotenv==1.0.1
 
-# 数据处理
+# Data Processing
 pydantic==2.10.3
 pydantic-settings==2.6.1
 
-# HTTP 请求
+# HTTP Client
 requests==2.32.3
 
-# 向量数据库
+# Vector Database
 chromadb==0.5.23
 
-# 嵌入模型
+# Embedding Models
 sentence-transformers==3.3.1
 torch==2.5.1
 transformers==4.47.1
 
-# 文本处理
+# Text Processing
 tiktoken==0.8.0
 
-# 日志
+# Logging
 coloredlogs==15.0.1
 
-# Redis 缓存
+# Redis Cache
 redis==5.0.1
 
-# 开发工具
+# Development Tools
 pytest==8.3.4
 pytest-asyncio==0.24.0
 black==24.10.0

@@ -1,7 +1,7 @@
 """
-重排模块 - RAG 智能问答系统
-作者：RAG 项目团队
-描述：使用 SiliconFlow Rerank API 对检索结果进行精排
+Rerank Module - RAG Intelligent Q&A System
+Author: RAG Project Team
+Description: Uses SiliconFlow Rerank API to refine retrieval results.
 """
 
 import requests
@@ -14,16 +14,16 @@ logger = logging.getLogger(__name__)
 
 
 class RerankEngine:
-    """重排引擎 - 负责对检索结果进行精确排序"""
+    """Rerank Engine - Responsible for precise sorting of retrieval results"""
 
     def __init__(self):
-        """初始化重排引擎"""
+        """Initialize Rerank Engine"""
         self.api_key = config.SILICONFLOW_API_KEY
         self.url = config.SILICONFLOW_RERANK_URL
         self.model = config.SILICONFLOW_RERANK_MODEL
 
         if not self.api_key:
-            logger.warning("未配置 SILICONFLOW_API_KEY，重排功能将不可用")
+            logger.warning("SILICONFLOW_API_KEY not configured, rerank feature unavailable")
 
     def rerank(
         self,
@@ -32,39 +32,39 @@ class RerankEngine:
         top_n: Optional[int] = None
     ) -> Optional[List[Dict[str, Any]]]:
         """
-        对文档列表进行重排
+        Rerank a list of documents
 
-        参数:
-            query: 查询文本
-            documents: 待重排的文档列表
-            top_n: 返回前 N 个结果，默认使用配置值
+        Args:
+            query: Query text
+            documents: List of documents to rerank
+            top_n: Return top N results, defaults to config
 
-        返回:
-            重排结果列表，每个元素包含 index 和 relevance_score
-            如果重排失败，返回 None
+        Returns:
+            List of rerank results, each element containing index and relevance_score.
+            Returns None if rerank fails.
 
-        异常:
-            RerankError: 重排失败时抛出（可选择是否捕获）
+        Raises:
+            RerankError: Thrown if rerank fails (optional catch)
         """
-        # 参数验证
+        # Validate args
         if not documents:
-            logger.warning("重排器: 候选文档列表为空，跳过调用")
+            logger.warning("Reranker: Candidate document list is empty, skipping")
             return []
 
         if not self.api_key:
-            logger.error("重排器: 缺少 API 密钥，无法执行重排")
+            logger.error("Reranker: Missing API Key, cannot execute rerank")
             return None
 
-        # 使用默认 top_n
+        # Use default top_n
         if top_n is None:
             top_n = config.RERANK_TOP_K
 
         logger.info(
-            f"重排器: 正在对 {len(documents)} 条文档进行深度打分 "
-            f"(模型: {self.model}, Top-N: {top_n})"
+            f"Reranker: Scoring {len(documents)} documents "
+            f"(Model: {self.model}, Top-N: {top_n})"
         )
 
-        # 构建请求
+        # Build request
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -78,7 +78,7 @@ class RerankEngine:
         }
 
         try:
-            # 发送请求
+            # Send request
             response = requests.post(
                 self.url,
                 json=payload,
@@ -87,41 +87,41 @@ class RerankEngine:
             )
             response.raise_for_status()
 
-            # 解析结果
+            # Parse results
             results = response.json().get("results", [])
-            logger.info(f"重排器: API 成功返回 {len(results)} 条重排结果")
+            logger.info(f"Reranker: API returned {len(results)} results")
 
-            # 记录详细分数（调试用）
+            # Log detailed scores (for debugging)
             for i, res in enumerate(results):
                 score = res.get("relevance_score", 0)
-                logger.debug(f"  排名 {i+1}: 原索引 {res.get('index')}, 分数 {score:.4f}")
+                logger.debug(f"  Rank {i+1}: Orig Index {res.get('index')}, Score {score:.4f}")
 
             return results
 
         except requests.exceptions.Timeout:
-            error_msg = "重排器: API 请求超时"
+            error_msg = "Reranker: API Request Timeout"
             logger.error(error_msg)
             return None
 
         except requests.exceptions.HTTPError as e:
-            error_msg = f"重排器: HTTP 错误 {e.response.status_code}"
+            error_msg = f"Reranker: HTTP Error {e.response.status_code}"
             logger.error(f"{error_msg}: {e.response.text}")
             return None
 
         except Exception as e:
-            error_msg = f"重排器: API 调用失败: {str(e)}"
+            error_msg = f"Reranker: API Call Failed: {str(e)}"
             logger.error(error_msg)
             return None
 
     def is_available(self) -> bool:
         """
-        检查重排服务是否可用
+        Check if rerank service is available
 
-        返回:
-            True 如果配置完整，否则 False
+        Returns:
+            True if config is complete, else False
         """
         return bool(self.api_key and self.url and self.model)
 
 
-# 全局重排引擎实例（单例模式）
+# Global Rerank Engine Instance (Singleton)
 rerank_engine = RerankEngine()

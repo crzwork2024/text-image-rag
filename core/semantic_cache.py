@@ -1,7 +1,7 @@
 """
-语义缓存模块 - 基于 Redis 和 Embedding 的智能缓存
-作者: RAG 项目团队
-描述: 使用向量相似度进行问题匹配，支持用户确认机制
+Semantic Cache Module - Smart caching based on Redis and Embeddings
+Author: RAG Project Team
+Description: Matches questions using vector similarity, supports user confirmation mechanism.
 """
 
 import redis
@@ -20,93 +20,93 @@ logger = logging.getLogger(__name__)
 
 class SemanticCache:
     """
-    语义缓存类
+    Semantic Cache Class
 
-    功能:
-    - 基于 Embedding 的语义相似度匹配
-    - 三层阈值策略（直接返回/用户确认/未命中）
-    - LRU 缓存淘汰
-    - 热门问题统计
-    - 相似问题聚类
+    Features:
+    - Semantic similarity matching based on Embeddings
+    - Three-layer threshold strategy (Direct Hit / Pending Confirm / Miss)
+    - LRU Cache Eviction
+    - Popular questions statistics
+    - Similar questions clustering
     """
 
     def __init__(self, embedding_engine):
         """
-        初始化语义缓存
+        Initialize Semantic Cache
 
-        参数:
-            embedding_engine: 嵌入引擎实例（用于计算问题向量）
+        Args:
+            embedding_engine: Embedding engine instance (for calculating question vectors)
         """
         try:
-            # Redis 连接配置
+            # Redis connection config
             redis_config = {
                 'host': config.REDIS_HOST,
                 'port': config.REDIS_PORT,
                 'db': config.REDIS_DB,
-                'decode_responses': False,  # 保留二进制数据（用于存储 embedding）
+                'decode_responses': False,  # Keep binary data (for storing embeddings)
                 'socket_timeout': 5,
                 'socket_connect_timeout': 5
             }
 
-            # 只有在密码非空时才添加密码参数
+            # Add password only if configured
             if config.REDIS_PASSWORD:
                 redis_config['password'] = config.REDIS_PASSWORD
 
             self.redis = redis.Redis(**redis_config)
 
-            # 测试连接
+            # Test connection
             self.redis.ping()
             self._available = True
-            logger.info(f"✅ Redis 连接成功: {config.REDIS_HOST}:{config.REDIS_PORT}")
+            logger.info(f"✅ Redis connected successfully: {config.REDIS_HOST}:{config.REDIS_PORT}")
 
         except (redis.ConnectionError, redis.TimeoutError) as e:
-            logger.warning(f"⚠️ Redis 连接失败，缓存功能已禁用: {e}")
+            logger.warning(f"⚠️ Redis connection failed, cache disabled: {e}")
             self._available = False
             self.redis = None
 
-        # 嵌入引擎
+        # Embedding Engine
         self.embedding_engine = embedding_engine
 
-        # 相似度阈值（从配置读取）
-        self.threshold_direct = config.CACHE_THRESHOLD_DIRECT      # 0.98 - 直接返回
-        self.threshold_confirm = config.CACHE_THRESHOLD_CONFIRM    # 0.95 - 需要确认
+        # Similarity Thresholds (from config)
+        self.threshold_direct = config.CACHE_THRESHOLD_DIRECT      # 0.98 - Direct return
+        self.threshold_confirm = config.CACHE_THRESHOLD_CONFIRM    # 0.95 - Needs confirmation
 
-        # 缓存配置
-        self.cache_ttl = config.CACHE_TTL                         # 过期时间（秒）
-        self.max_cache_size = config.CACHE_MAX_SIZE               # 最大缓存条目数
+        # Cache Config
+        self.cache_ttl = config.CACHE_TTL                         # TTL (seconds)
+        self.max_cache_size = config.CACHE_MAX_SIZE               # Max cache entries
 
         if self._available:
-            logger.info(f"📦 缓存配置 - 直接阈值: {self.threshold_direct}, "
-                       f"确认阈值: {self.threshold_confirm}, "
+            logger.info(f"📦 Cache Config - Direct Threshold: {self.threshold_direct}, "
+                       f"Confirm Threshold: {self.threshold_confirm}, "
                        f"TTL: {self.cache_ttl}s, "
-                       f"最大容量: {self.max_cache_size}")
+                       f"Max Capacity: {self.max_cache_size}")
 
     def is_available(self) -> bool:
-        """检查缓存服务是否可用"""
+        """Check if cache service is available"""
         return self._available
 
     def _compute_hash(self, text: str) -> str:
         """
-        计算文本的哈希ID
+        Compute hash ID for text
 
-        参数:
-            text: 输入文本
+        Args:
+            text: Input text
 
-        返回:
-            16位哈希字符串
+        Returns:
+            16-character hash string
         """
         return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
 
     def _cosine_similarity(self, emb1: np.ndarray, emb2: np.ndarray) -> float:
         """
-        计算两个向量的余弦相似度
+        Compute cosine similarity between two vectors
 
-        参数:
-            emb1: 向量1
-            emb2: 向量2
+        Args:
+            emb1: Vector 1
+            emb2: Vector 2
 
-        返回:
-            相似度分数 (0-1)
+        Returns:
+            Similarity score (0-1)
         """
         dot_product = np.dot(emb1, emb2)
         norm1 = np.linalg.norm(emb1)
@@ -123,38 +123,38 @@ class SemanticCache:
         session_id: str
     ) -> Dict:
         """
-        查询缓存
+        Query the cache
 
-        参数:
-            question: 用户问题
-            session_id: 会话ID
+        Args:
+            question: User question
+            session_id: Session ID
 
-        返回:
-            字典，包含以下键:
+        Returns:
+            Dict containing:
             - status: "hit" | "pending_confirm" | "miss"
-            - answer: 答案内容（仅当 hit 时）
-            - cached_question: 相似问题（hit 或 pending_confirm 时）
-            - similarity: 相似度分数（hit 或 pending_confirm 时）
-            - confirmation_id: 确认ID（仅当 pending_confirm 时）
+            - answer: Answer content (only on hit)
+            - cached_question: Similar question (on hit or pending_confirm)
+            - similarity: Similarity score (on hit or pending_confirm)
+            - confirmation_id: Confirmation ID (only on pending_confirm)
         """
         if not self._available:
             return {"status": "miss"}
 
         try:
-            # 1. 计算问题的embedding（使用embedding_engine）
+            # 1. Calculate question embedding
             question_embedding_list = self.embedding_engine.encode([question])
             question_embedding = np.array(question_embedding_list[0], dtype=np.float32)
 
-            # 2. 获取所有缓存的问题ID
+            # 2. Get all cached question IDs
             cached_ids = self.redis.zrange("cache:embeddings", 0, -1)
 
             if not cached_ids or len(cached_ids) == 0:
-                logger.debug("💭 缓存为空，首次查询")
+                logger.debug("💭 Cache is empty, first query")
                 return {"status": "miss"}
 
-            logger.info(f"🔍 开始语义缓存查询 - 当前缓存: {len(cached_ids)} 条")
+            logger.info(f"🔍 Starting semantic cache query - Current entries: {len(cached_ids)}")
 
-            # 3. 遍历所有缓存条目，计算相似度
+            # 3. Iterate through cache entries, calculate similarity
             best_match = None
             best_similarity = 0.0
             best_id = None
@@ -162,18 +162,18 @@ class SemanticCache:
             for cache_id in cached_ids:
                 cache_id_str = cache_id.decode('utf-8') if isinstance(cache_id, bytes) else cache_id
 
-                # 获取缓存的数据
+                # Get cached data
                 cached_data = self.redis.hgetall(f"cache:question:{cache_id_str}")
                 if not cached_data:
                     continue
 
-                # 反序列化 embedding
+                # Deserialize embedding
                 cached_embedding = np.frombuffer(
                     cached_data[b'embedding'],
                     dtype=np.float32
                 )
 
-                # 计算余弦相似度
+                # Calculate cosine similarity
                 similarity = self._cosine_similarity(question_embedding, cached_embedding)
 
                 if similarity > best_similarity:
@@ -181,20 +181,20 @@ class SemanticCache:
                     best_match = cached_data
                     best_id = cache_id_str
 
-            # 4. 根据相似度分层处理
-            logger.info(f"🎯 最高相似度: {best_similarity:.4f} "
-                       f"(直接阈值: {self.threshold_direct}, 确认阈值: {self.threshold_confirm})")
+            # 4. Layered handling based on similarity
+            logger.info(f"🎯 Max Similarity: {best_similarity:.4f} "
+                       f"(Direct: {self.threshold_direct}, Confirm: {self.threshold_confirm})")
 
             if best_similarity >= self.threshold_direct:
-                # ✅ 高度相似 → 直接返回缓存
+                # ✅ High similarity -> Direct hit
                 cached_question = best_match[b'question'].decode('utf-8')
                 cached_answer = best_match[b'answer'].decode('utf-8')
 
-                logger.info(f"✅ 缓存直接命中! 相似度: {best_similarity:.2%}")
-                logger.info(f"   缓存问题: {cached_question[:50]}...")
-                logger.info(f"   当前问题: {question[:50]}...")
+                logger.info(f"✅ Cache Direct Hit! Similarity: {best_similarity:.2%}")
+                logger.info(f"   Cached Question: {cached_question[:50]}...")
+                logger.info(f"   Current Question: {question[:50]}...")
 
-                # 更新统计信息
+                # Update stats
                 self._update_hit_stats(best_id, cached_question)
 
                 return {
@@ -205,18 +205,18 @@ class SemanticCache:
                 }
 
             elif best_similarity >= self.threshold_confirm:
-                # ⚠️ 中等相似 → 需要用户确认
+                # ⚠️ Moderate similarity -> Needs confirmation
                 cached_question = best_match[b'question'].decode('utf-8')
                 cached_answer = best_match[b'answer'].decode('utf-8')
 
-                logger.info(f"⚠️ 发现相似问题，等待用户确认 (相似度: {best_similarity:.2%})")
-                logger.info(f"   缓存问题: {cached_question[:50]}...")
-                logger.info(f"   当前问题: {question[:50]}...")
+                logger.info(f"⚠️ Found similar question, waiting for confirmation (Similarity: {best_similarity:.2%})")
+                logger.info(f"   Cached Question: {cached_question[:50]}...")
+                logger.info(f"   Current Question: {question[:50]}...")
 
-                # 生成唯一的确认ID
+                # Generate unique confirmation ID
                 confirmation_id = f"{session_id}_{int(datetime.now().timestamp() * 1000)}"
 
-                # 存储待确认数据（5分钟过期）
+                # Store pending data (expires in 5 minutes)
                 pending_data = {
                     "question": question,
                     "cached_question": cached_question,
@@ -228,7 +228,7 @@ class SemanticCache:
 
                 self.redis.setex(
                     f"cache:pending:{confirmation_id}",
-                    300,  # 5分钟过期
+                    300,  # 5 minutes
                     json.dumps(pending_data, ensure_ascii=False)
                 )
 
@@ -240,67 +240,67 @@ class SemanticCache:
                 }
 
             else:
-                # ❌ 相似度太低 → 缓存未命中
-                logger.info(f"❌ 缓存未命中 (最高相似度: {best_similarity:.2%} < {self.threshold_confirm})")
+                # ❌ Similarity too low -> Miss
+                logger.info(f"❌ Cache Miss (Max Similarity: {best_similarity:.2%} < {self.threshold_confirm})")
                 return {"status": "miss"}
 
         except Exception as e:
-            logger.error(f"❌ 缓存查询出错: {e}", exc_info=True)
+            logger.error(f"❌ Cache query error: {e}", exc_info=True)
             return {"status": "miss"}
 
     async def confirm_cache(self, confirmation_id: str, user_confirmed: bool) -> Optional[str]:
         """
-        处理用户的缓存确认
+        Handle user cache confirmation
 
-        参数:
-            confirmation_id: 确认ID
-            user_confirmed: 用户是否确认使用缓存
+        Args:
+            confirmation_id: Confirmation ID
+            user_confirmed: Whether user confirmed to use cache
 
-        返回:
-            如果用户确认，返回缓存的答案；否则返回 None
+        Returns:
+            Cached answer if confirmed, else None
         """
         if not self._available:
             return None
 
         try:
-            # 获取待确认数据
+            # Get pending data
             pending_key = f"cache:pending:{confirmation_id}"
             pending_data_json = self.redis.get(pending_key)
 
             if not pending_data_json:
-                logger.warning(f"⚠️ 确认ID已过期或不存在: {confirmation_id}")
+                logger.warning(f"⚠️ Confirmation ID expired or not found: {confirmation_id}")
                 return None
 
             pending_data = json.loads(pending_data_json.decode('utf-8'))
 
             if user_confirmed:
-                # 用户确认是相同问题 → 使用缓存答案
-                logger.info(f"✅ 用户确认相似，使用缓存答案")
-                logger.info(f"   原问题: {pending_data['cached_question'][:50]}...")
-                logger.info(f"   新问题: {pending_data['question'][:50]}...")
+                # User confirmed similarity -> Use cached answer
+                logger.info(f"✅ User confirmed similarity, using cached answer")
+                logger.info(f"   Original Question: {pending_data['cached_question'][:50]}...")
+                logger.info(f"   New Question: {pending_data['question'][:50]}...")
 
-                # 更新统计信息
+                # Update stats
                 self._update_hit_stats(pending_data['cached_id'], pending_data['cached_question'])
 
-                # 将新问题添加到相似问题列表
+                # Add new question to similar questions group
                 self._add_similar_question(
                     pending_data['cached_id'],
                     pending_data['question']
                 )
 
-                # 删除待确认数据
+                # Delete pending data
                 self.redis.delete(pending_key)
 
                 return pending_data['cached_answer']
 
             else:
-                # 用户否认是相同问题 → 需要重新检索
-                logger.info(f"❌ 用户否认相似，将重新检索")
+                # User denied similarity -> Re-query
+                logger.info(f"❌ User denied similarity, will re-query")
                 self.redis.delete(pending_key)
                 return None
 
         except Exception as e:
-            logger.error(f"❌ 处理缓存确认时出错: {e}", exc_info=True)
+            logger.error(f"❌ Error handling cache confirmation: {e}", exc_info=True)
             return None
 
     def set(
@@ -312,37 +312,37 @@ class SemanticCache:
         source_info: str = None
     ):
         """
-        添加新的缓存条目
+        Add new cache entry
 
-        参数:
-            question: 问题文本
-            answer: 答案文本
-            cache_type: 缓存类型 ("auto" | "confirmed" | "manual")
-            quality_score: 质量分数 (0-10, manual=10, confirmed=5, auto=0)
-            source_info: 源文件信息（parent_hash列表的JSON字符串或管理员填写的文本）
+        Args:
+            question: Question text
+            answer: Answer text
+            cache_type: Cache type ("auto" | "confirmed" | "manual")
+            quality_score: Quality score (0-10, manual=10, confirmed=5, auto=0)
+            source_info: Source info (JSON string of parent_hash list or manual text)
         """
         if not self._available:
             return
 
         try:
-            # 1. 计算问题的embedding
+            # 1. Calculate question embedding
             question_embedding_list = self.embedding_engine.encode([question])
             embedding = np.array(question_embedding_list[0], dtype=np.float32)
 
-            # 2. 检查缓存大小限制
+            # 2. Check cache size limit
             cache_size = self.redis.zcard("cache:embeddings")
             if cache_size >= self.max_cache_size:
-                # LRU 淘汰：删除最旧的条目
+                # LRU Eviction: Remove oldest entry
                 oldest_ids = self.redis.zrange("cache:embeddings", 0, 0)
                 if oldest_ids:
                     oldest_id = oldest_ids[0]
                     self._evict_cache(oldest_id)
-                    logger.info(f"🗑️ 缓存已满，LRU淘汰最旧条目")
+                    logger.info(f"🗑️ Cache full, LRU evicted oldest entry")
 
-            # 3. 计算哈希ID
+            # 3. Compute Hash ID
             cache_id = self._compute_hash(question)
 
-            # 4. 存储缓存数据
+            # 4. Store cache data
             cache_data = {
                 "question": question.encode('utf-8'),
                 "answer": answer.encode('utf-8'),
@@ -352,7 +352,7 @@ class SemanticCache:
                 "last_hit": b"",
                 "cache_type": cache_type.encode('utf-8'),
                 "quality_score": str(quality_score).encode('utf-8'),
-                "source_info": (source_info or "").encode('utf-8')  # 源文件信息
+                "source_info": (source_info or "").encode('utf-8')
             }
 
             self.redis.hset(
@@ -360,36 +360,36 @@ class SemanticCache:
                 mapping=cache_data
             )
 
-            # 5. 添加到时间索引（用于 LRU）
+            # 5. Add to time index (for LRU)
             self.redis.zadd(
                 "cache:embeddings",
                 {cache_id: datetime.now().timestamp()}
             )
 
-            # 6. 缓存永久有效（不设置 TTL）
-            # 注意：只有管理员可以删除或更新缓存
-            
-            # 7. 初始化热门问题统计（首次存储也算作1次访问）
+            # 6. Cache persists (no TTL set)
+            # Note: Only admin can delete or update cache
+
+            # 7. Initialize popular questions stats (first store counts as 1 view)
             self.redis.zincrby("cache:popular", 1, question)
-            
-            # 8. 存储缓存类型标记
+
+            # 8. Store cache type marker
             self.redis.set(f"cache:type:{cache_id}", cache_type)
 
-            logger.info(f"💾 添加到缓存: {cache_id[:8]}... | 类型: {cache_type} | 质量: {quality_score} | 问题: {question[:50]}...")
+            logger.info(f"💾 Added to cache: {cache_id[:8]}... | Type: {cache_type} | Quality: {quality_score} | Question: {question[:50]}...")
 
         except Exception as e:
-            logger.error(f"❌ 添加缓存时出错: {e}", exc_info=True)
+            logger.error(f"❌ Error adding cache: {e}", exc_info=True)
 
     def _update_hit_stats(self, cache_id: str, question: str):
         """
-        更新缓存命中统计
+        Update cache hit statistics
 
-        参数:
-            cache_id: 缓存条目ID
-            question: 问题文本
+        Args:
+            cache_id: Cache entry ID
+            question: Question text
         """
         try:
-            # 1. 增加该缓存条目的命中次数
+            # 1. Increment hit count
             self.redis.hincrby(f"cache:question:{cache_id}", "hit_count", 1)
             self.redis.hset(
                 f"cache:question:{cache_id}",
@@ -397,25 +397,25 @@ class SemanticCache:
                 datetime.now().isoformat().encode('utf-8')
             )
 
-            # 2. 更新热门问题排行（Sorted Set，按命中次数排序）
+            # 2. Update popular questions rank (Sorted Set, by hit count)
             self.redis.zincrby("cache:popular", 1, question)
 
-            # 3. 更新 LRU 时间戳（最近使用的排到后面）
+            # 3. Update LRU timestamp (Most recently used moves to back)
             self.redis.zadd(
                 "cache:embeddings",
                 {cache_id: datetime.now().timestamp()}
             )
 
         except Exception as e:
-            logger.error(f"❌ 更新统计信息时出错: {e}", exc_info=True)
+            logger.error(f"❌ Error updating stats: {e}", exc_info=True)
 
     def _add_similar_question(self, canonical_id: str, new_question: str):
         """
-        将新问题添加到相似问题组
+        Add new question to similar questions group
 
-        参数:
-            canonical_id: 代表性问题的ID
-            new_question: 新的相似问题
+        Args:
+            canonical_id: Canonical question ID
+            new_question: New similar question
         """
         try:
             self.redis.hincrby(
@@ -424,58 +424,58 @@ class SemanticCache:
                 1
             )
         except Exception as e:
-            logger.error(f"❌ 添加相似问题时出错: {e}", exc_info=True)
+            logger.error(f"❌ Error adding similar question: {e}", exc_info=True)
 
     def _evict_cache(self, cache_id):
         """
-        删除缓存条目（LRU 淘汰）
+        Evict cache entry (LRU)
 
-        参数:
-            cache_id: 要删除的缓存ID
+        Args:
+            cache_id: Cache ID to remove
         """
         try:
             cache_id_str = cache_id.decode('utf-8') if isinstance(cache_id, bytes) else cache_id
 
-            # 删除主数据
+            # Delete main data
             self.redis.delete(f"cache:question:{cache_id_str}")
 
-            # 从索引中删除
+            # Remove from index
             self.redis.zrem("cache:embeddings", cache_id_str)
 
-            # 删除相似问题映射
+            # Delete similar questions mapping
             self.redis.delete(f"cache:similar:{cache_id_str}")
 
         except Exception as e:
-            logger.error(f"❌ 删除缓存时出错: {e}", exc_info=True)
+            logger.error(f"❌ Error evicting cache: {e}", exc_info=True)
 
     def get_popular_questions(self, top_n: int = 3) -> List[Dict]:
         """
-        获取最热门的问题（供前端显示）
+        Get popular questions (for frontend display)
 
-        参数:
-            top_n: 返回的热门问题数量
+        Args:
+            top_n: Number of popular questions to return
 
-        返回:
-            热门问题列表，每项包含:
-            - question: 问题文本
-            - count: 累计访问次数
-            - similar_count: 相似问题数量
+        Returns:
+            List of popular questions, each containing:
+            - question: Question text
+            - count: Cumulative visit count
+            - similar_count: Number of similar questions
         """
         if not self._available:
             return []
 
         try:
-            # 从热门排行中获取 top N（按分数降序）
+            # Get top N from popular rank (descending score)
             popular = self.redis.zrevrange("cache:popular", 0, top_n - 1, withscores=True)
 
             result = []
             for question_bytes, count in popular:
                 question = question_bytes.decode('utf-8') if isinstance(question_bytes, bytes) else question_bytes
 
-                # 获取这个问题的ID
+                # Get ID for this question
                 cache_id = self._compute_hash(question)
 
-                # 获取相似问题数量
+                # Get similar question count
                 similar_count = self.redis.hlen(f"cache:similar:{cache_id}")
 
                 result.append({
@@ -487,20 +487,20 @@ class SemanticCache:
             return result
 
         except Exception as e:
-            logger.error(f"❌ 获取热门问题时出错: {e}", exc_info=True)
+            logger.error(f"❌ Error getting popular questions: {e}", exc_info=True)
             return []
 
     def get_cache_stats(self) -> Dict:
         """
-        获取缓存统计信息
+        Get cache statistics
 
-        返回:
-            统计信息字典，包含:
-            - available: 缓存服务是否可用
-            - total_entries: 缓存条目总数
-            - total_hits: 总命中次数
-            - popular_questions: 热门问题列表
-            - cache_by_type: 按类型分组的缓存数量
+        Returns:
+            Stats dictionary containing:
+            - available: Is cache service available
+            - total_entries: Total cache entries
+            - total_hits: Total hit count
+            - popular_questions: List of popular questions
+            - cache_by_type: Cache count grouped by type
         """
         if not self._available:
             return {
@@ -514,20 +514,20 @@ class SemanticCache:
         try:
             total_entries = self.redis.zcard("cache:embeddings")
 
-            # 计算总命中次数和按类型统计
+            # Calculate total hits and stats by type
             total_hits = 0
             cache_by_type = {"auto": 0, "confirmed": 0, "manual": 0}
-            
+
             cached_ids = self.redis.zrange("cache:embeddings", 0, -1)
             for cache_id in cached_ids:
                 cache_id_str = cache_id.decode('utf-8') if isinstance(cache_id, bytes) else cache_id
-                
-                # 统计命中次数
+
+                # Count hits
                 hit_count = self.redis.hget(f"cache:question:{cache_id_str}", "hit_count")
                 if hit_count:
                     total_hits += int(hit_count.decode('utf-8') if isinstance(hit_count, bytes) else hit_count)
-                
-                # 统计缓存类型
+
+                # Count by type
                 cache_type = self.redis.get(f"cache:type:{cache_id_str}")
                 if cache_type:
                     cache_type_str = cache_type.decode('utf-8') if isinstance(cache_type, bytes) else cache_type
@@ -543,7 +543,7 @@ class SemanticCache:
             }
 
         except Exception as e:
-            logger.error(f"❌ 获取缓存统计时出错: {e}", exc_info=True)
+            logger.error(f"❌ Error getting cache stats: {e}", exc_info=True)
             return {
                 "available": False,
                 "total_entries": 0,
@@ -551,71 +551,71 @@ class SemanticCache:
                 "popular_questions": [],
                 "cache_by_type": {}
             }
-    
+
     def clear_cache(self, cache_types: List[str] = None) -> int:
         """
-        清除缓存
-        
-        参数:
-            cache_types: 要清除的缓存类型列表，None 表示清除所有
-            
-        返回:
-            删除的缓存条目数
+        Clear cache
+
+        Args:
+            cache_types: List of cache types to clear. None means clear all.
+
+        Returns:
+            Number of deleted cache entries
         """
         if not self._available:
             return 0
-        
+
         try:
             cached_ids = self.redis.zrange("cache:embeddings", 0, -1)
             deleted_count = 0
-            
+
             for cache_id in cached_ids:
                 cache_id_str = cache_id.decode('utf-8') if isinstance(cache_id, bytes) else cache_id
-                
-                # 如果指定了类型过滤
+
+                # Filter by type if specified
                 if cache_types:
                     cache_type = self.redis.get(f"cache:type:{cache_id_str}")
                     if cache_type:
                         cache_type_str = cache_type.decode('utf-8') if isinstance(cache_type, bytes) else cache_type
                         if cache_type_str not in cache_types:
                             continue
-                
-                # 删除缓存
+
+                # Delete cache
                 self._evict_cache(cache_id_str)
                 deleted_count += 1
-            
-            # 如果清除所有，也清空热门问题
+
+            # Clear popular questions if clearing all
             if not cache_types:
                 self.redis.delete("cache:popular")
-            
-            logger.info(f"🗑️ 清除缓存: {deleted_count} 条")
+
+            logger.info(f"🗑️ Cleared cache: {deleted_count} entries")
             return deleted_count
-            
+
         except Exception as e:
-            logger.error(f"❌ 清除缓存时出错: {e}", exc_info=True)
+            logger.error(f"❌ Error clearing cache: {e}", exc_info=True)
             return 0
-    
+
     def get_all_cached_questions(self, limit: int = 100) -> List[Dict]:
         """
-        获取所有缓存的问题列表（用于管理员查看）
-        
-        参数:
-            limit: 返回的最大数量
-            
-        返回:
-            缓存问题列表
+        Get all cached questions (for admin view)
+
+        Args:
+            limit: Maximum number to return
+
+        Returns:
+            List of cached questions
         """
         if not self._available:
             return []
-        
+
         try:
             cached_ids = self.redis.zrange("cache:embeddings", 0, limit - 1)
             result = []
-            
+
             for cache_id in cached_ids:
                 cache_id_str = cache_id.decode('utf-8') if isinstance(cache_id, bytes) else cache_id
                 cached_data = self.redis.hgetall(f"cache:question:{cache_id_str}")
-                
+
                 if cached_data:
                     question = cached_data[b'question'].decode('utf-8')
                     answer = cached_data.get(b'answer', b'').decode('utf-8')
@@ -624,7 +624,7 @@ class SemanticCache:
                     cache_type = cached_data.get(b'cache_type', b'auto').decode('utf-8')
                     quality_score = int(cached_data.get(b'quality_score', b'0').decode('utf-8'))
                     source_info = cached_data.get(b'source_info', b'').decode('utf-8')
-                    
+
                     result.append({
                         "cache_id": cache_id_str,
                         "question": question,
@@ -635,9 +635,9 @@ class SemanticCache:
                         "quality_score": quality_score,
                         "source_info": source_info
                     })
-            
+
             return result
-            
+
         except Exception as e:
-            logger.error(f"❌ 获取缓存列表时出错: {e}", exc_info=True)
+            logger.error(f"❌ Error getting cache list: {e}", exc_info=True)
             return []

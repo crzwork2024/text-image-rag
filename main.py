@@ -1,7 +1,7 @@
 """
-主应用模块 - RAG 智能问答系统
-作者：RAG 项目团队
-描述：FastAPI 应用主入口，提供问答 API 和 Web 界面
+Main Application Module - RAG Intelligent Q&A System
+Author: RAG Project Team
+Description: FastAPI application entry point, providing Q&A API and Web interface.
 """
 
 import json
@@ -31,7 +31,7 @@ from utils.logger import setup_logger
 from utils.responses import QueryResponse, error_response
 from utils.exceptions import RetrievalError, LLMAPIError
 
-# 初始化日志
+# Initialize Logger
 logger = setup_logger(
     "API",
     log_level=config.LOG_LEVEL,
@@ -39,27 +39,27 @@ logger = setup_logger(
     log_dir=config.LOG_DIR
 )
 
-# 全局变量：父节点存储映射
+# Global: Parent Node Storage Map
 parent_store = {}
 
-# 全局变量：语义缓存
+# Global: Semantic Cache
 semantic_cache = None
 
-# 全局变量：管理员会话存储
+# Global: Admin Session Storage
 admin_sessions = {}  # {token: expire_time}
 
-# 安全配置
+# Security Config
 security = HTTPBearer(auto_error=False)
 
 
-# ==================== 管理员认证辅助函数 ====================
+# ==================== Admin Auth Helpers ====================
 def hash_password(password: str) -> str:
-    """哈希密码"""
+    """Hash password"""
     return hashlib.sha256(password.encode()).hexdigest()
 
 
 def verify_admin(username: str, password: str) -> bool:
-    """验证管理员凭证"""
+    """Verify admin credentials"""
     admin_username = config.ADMIN_USERNAME if hasattr(config, 'ADMIN_USERNAME') else "admin"
     admin_password_hash = config.ADMIN_PASSWORD_HASH if hasattr(config, 'ADMIN_PASSWORD_HASH') else hash_password("admin123")
     
@@ -67,147 +67,148 @@ def verify_admin(username: str, password: str) -> bool:
 
 
 def generate_admin_token() -> str:
-    """生成管理员 token"""
+    """Generate admin token"""
     return secrets.token_urlsafe(32)
 
 
 def verify_admin_token(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> bool:
-    """验证管理员 token"""
+    """Verify admin token"""
     if not credentials:
-        raise HTTPException(status_code=401, detail="未提供认证令牌")
+        raise HTTPException(status_code=401, detail="Authentication token not provided")
     
     token = credentials.credentials
     if token not in admin_sessions:
-        raise HTTPException(status_code=401, detail="认证令牌无效或已过期")
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     
-    # 检查是否过期
+    # Check expiration
     if datetime.now() > admin_sessions[token]:
         del admin_sessions[token]
-        raise HTTPException(status_code=401, detail="认证令牌已过期")
+        raise HTTPException(status_code=401, detail="Token expired")
     
     return True
 
 
 class QueryRequest(BaseModel):
-    """查询请求模型"""
-    prompt: str = Field(..., description="用户问题", min_length=1, max_length=1000)
-    use_rerank: bool = Field(True, description="是否使用重排优化")
-    use_query_enhancement: bool = Field(False, description="是否使用查询增强（HyDE）")
-    session_id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="会话ID")
+    """Query Request Model"""
+    prompt: str = Field(..., description="User question", min_length=1, max_length=1000)
+    use_rerank: bool = Field(True, description="Whether to use Rerank optimization")
+    use_query_enhancement: bool = Field(False, description="Whether to use Query Enhancement (HyDE)")
+    session_id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Session ID")
 
 
 class CacheConfirmRequest(BaseModel):
-    """缓存确认请求模型"""
-    confirmation_id: str = Field(..., description="确认ID")
-    user_confirmed: bool = Field(..., description="用户是否确认使用缓存")
+    """Cache Confirmation Request Model"""
+    confirmation_id: str = Field(..., description="Confirmation ID")
+    user_confirmed: bool = Field(..., description="Whether user confirmed to use cache")
 
 
 class FeedbackRequest(BaseModel):
-    """用户反馈请求模型"""
-    session_id: str = Field(..., description="会话ID")
-    question: str = Field(..., description="用户问题")
-    answer: str = Field(..., description="系统答案")
-    satisfied: bool = Field(..., description="用户是否满意")
-    source_hashes: Optional[List[str]] = Field(None, description="源文档Hash列表")
+    """User Feedback Request Model"""
+    session_id: str = Field(..., description="Session ID")
+    question: str = Field(..., description="User question")
+    answer: str = Field(..., description="System answer")
+    satisfied: bool = Field(..., description="Is user satisfied")
+    source_hashes: Optional[List[str]] = Field(None, description="Source document hashes")
 
 
 class AdminLoginRequest(BaseModel):
-    """管理员登录请求模型"""
-    username: str = Field(..., description="用户名")
-    password: str = Field(..., description="密码")
+    """Admin Login Request Model"""
+    username: str = Field(..., description="Username")
+    password: str = Field(..., description="Password")
 
 
 class ManualCacheRequest(BaseModel):
-    """手动添加缓存请求模型"""
-    question: str = Field(..., description="问题文本", min_length=1)
-    answer: str = Field(..., description="答案文本", min_length=1)
-    quality_score: int = Field(10, description="质量分数", ge=0, le=10)
-    source_info: Optional[str] = Field(None, description="源文件信息（管理员手动填写）")
+    """Manual Cache Add Request Model"""
+    question: str = Field(..., description="Question text", min_length=1)
+    answer: str = Field(..., description="Answer text", min_length=1)
+    quality_score: int = Field(10, description="Quality score", ge=0, le=10)
+    source_info: Optional[str] = Field(None, description="Source info (manually entered by admin)")
 
 
 class ClearCacheRequest(BaseModel):
-    """清除缓存请求模型"""
-    cache_types: Optional[List[str]] = Field(None, description="要清除的缓存类型")
-    confirm: bool = Field(False, description="确认清除")
+    """Clear Cache Request Model"""
+    cache_types: Optional[List[str]] = Field(None, description="Cache types to clear")
+    confirm: bool = Field(False, description="Confirm clear")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    应用生命周期管理
+    App Lifecycle Manager
 
-    启动时:
-    - 加载父节点映射
-    - 检查向量数据库，如果为空则自动执行摄取
+    On Startup:
+    - Load parent node mapping
+    - Check vector DB, run auto-ingestion if empty
 
-    关闭时:
-    - 清理资源
+    On Shutdown:
+    - Clean up resources
     """
     global parent_store, semantic_cache
 
     logger.info("=" * 60)
-    logger.info("系统启动中...")
+    logger.info("System Starting...")
     logger.info("=" * 60)
 
     try:
-        # 创建必要的目录
+        # Create necessary directories
         config.create_directories()
 
-        # 初始化语义缓存
-        logger.info("初始化语义缓存...")
+        # Initialize Semantic Cache
+        logger.info("Initializing Semantic Cache...")
         semantic_cache = SemanticCache(embedding_engine)
         if semantic_cache.is_available():
-            logger.info("✓ 语义缓存已启用")
+            logger.info("✓ Semantic Cache Enabled")
         else:
-            logger.warning("⚠️ 语义缓存不可用（Redis连接失败），将跳过缓存功能")
+            logger.warning("⚠️ Semantic Cache Unavailable (Redis Connection Failed), skipping cache feature")
 
-        # 加载父节点映射
+        # Load Parent Node Map
         if config.PARENT_STORE_PATH.exists():
-            logger.info(f"加载父节点映射: {config.PARENT_STORE_PATH}")
+            logger.info(f"Loading Parent Node Map: {config.PARENT_STORE_PATH}")
             with open(config.PARENT_STORE_PATH, "r", encoding="utf-8") as f:
                 parent_store = json.load(f)
-            logger.info(f"✓ 加载 {len(parent_store)} 个父节点")
+            logger.info(f"✓ Loaded {len(parent_store)} parent nodes")
         else:
-            logger.warning("父节点映射文件不存在，将在首次摄取时创建")
+            logger.warning("Parent node map file not found, will be created on first ingestion")
 
-        # 检查向量数据库
+        # Check Vector Database
         doc_count = vector_db.count()
-        logger.info(f"向量数据库文档数量: {doc_count}")
+        logger.info(f"Vector Database Document Count: {doc_count}")
 
         if doc_count == 0:
-            logger.warning("向量数据库为空，开始自动摄取...")
+            logger.warning("Vector database is empty, starting auto-ingestion...")
             run_ingestion()
 
-            # 重新加载父节点映射
+            # Reload parent node map
             with open(config.PARENT_STORE_PATH, "r", encoding="utf-8") as f:
                 parent_store = json.load(f)
 
-            logger.info("✓ 自动摄取完成")
+            logger.info("✓ Auto-ingestion completed")
 
         logger.info("=" * 60)
-        logger.info("系统启动完成，服务就绪")
+        logger.info("System Startup Complete, Service Ready")
         logger.info("=" * 60)
 
         yield
 
     except Exception as e:
-        logger.error(f"系统启动失败: {e}")
+        logger.error(f"System Startup Failed: {e}")
         raise
 
     finally:
         logger.info("=" * 60)
-        logger.info("系统关闭")
+        logger.info("System Shutdown")
         logger.info("=" * 60)
 
 
-# 创建 FastAPI 应用
+# Create FastAPI App
 app = FastAPI(
-    title="RAG 智能问答系统 API",
-    description="基于检索增强生成的智能问答服务",
+    title="RAG Intelligent Q&A System API",
+    description="Intelligent Q&A Service based on Retrieval-Augmented Generation",
     version="1.0.0",
     lifespan=lifespan
 )
 
-# 添加 CORS 中间件
+# Add CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -219,42 +220,42 @@ app.add_middleware(
 @app.post("/query", response_model=QueryResponse)
 async def query_rag(req: QueryRequest):
     """
-    RAG 问答接口
+    RAG Query Interface
 
-    流程:
-    1. 向量检索：从向量数据库召回候选文档
-    2. 初步过滤：根据相似度阈值过滤
-    3. 重排（可选）：使用 Rerank 模型精确排序
-    4. 上下文组装：根据父节点哈希获取完整章节
-    5. LLM 生成：调用大语言模型生成回答
+    Workflow:
+    1. Vector Search: Recall candidate documents from vector DB
+    2. Preliminary Filtering: Filter by similarity threshold
+    3. Rerank (Optional): Precise sorting using Rerank model
+    4. Context Assembly: Retrieve full sections using parent node hashes
+    5. LLM Generation: Call LLM to generate answer
 
-    参数:
-        req: 查询请求，包含问题和是否使用重排
+    Args:
+        req: Query request containing question and options
 
-    返回:
-        QueryResponse: 包含答案、最高分数、来源数量
+    Returns:
+        QueryResponse: Contains answer, best score, source count
     """
-    # 构建模式标识
+    # Build mode identifier
     modes = []
     if req.use_query_enhancement:
-        modes.append("查询增强")
-    modes.append("精排模式" if req.use_rerank else "直取模式")
+        modes.append("Query Enhancement")
+    modes.append("Precision Mode" if req.use_rerank else "Fast Mode")
     mode_str = " + ".join(modes)
 
     logger.info("=" * 60)
-    logger.info(f"[新查询] {mode_str}")
-    logger.info(f"问题: {req.prompt[:100]}{'...' if len(req.prompt) > 100 else ''}")
+    logger.info(f"[New Query] {mode_str}")
+    logger.info(f"Question: {req.prompt[:100]}{'...' if len(req.prompt) > 100 else ''}")
     logger.info("=" * 60)
 
     try:
-        # ==================== 步骤 0: 语义缓存查询 ====================
+        # ==================== Step 0: Semantic Cache Query ====================
         if semantic_cache and semantic_cache.is_available():
-            logger.info("步骤 0: 查询语义缓存")
+            logger.info("Step 0: Query Semantic Cache")
             cache_result = await semantic_cache.query(req.prompt, req.session_id)
 
             if cache_result["status"] == "hit":
-                # 缓存直接命中
-                logger.info("⚡ 缓存直接命中，返回缓存答案")
+                # Cache Direct Hit
+                logger.info("⚡ Cache Direct Hit, returning cached answer")
                 return QueryResponse(
                     answer=cache_result["answer"],
                     best_score=f"{cache_result['similarity']:.2%}",
@@ -268,36 +269,36 @@ async def query_rag(req: QueryRequest):
                 )
 
             elif cache_result["status"] == "pending_confirm":
-                # 需要用户确认
-                logger.info("⏸️ 发现相似问题，等待用户确认")
+                # Needs User Confirmation
+                logger.info("⏸️ Found similar question, waiting for user confirmation")
                 return {
                     "need_confirmation": True,
                     "cached_question": cache_result["cached_question"],
                     "similarity": f"{cache_result['similarity']:.2%}",
                     "confirmation_id": cache_result["confirmation_id"],
-                    "message": "发现相似问题，是否使用缓存答案？"
+                    "message": "Found a similar question, use cached answer?"
                 }
 
-            # cache_result["status"] == "miss" → 继续正常流程
-            logger.info("🔄 缓存未命中，执行完整检索流程")
+            # cache_result["status"] == "miss" -> Continue
+            logger.info("🔄 Cache Miss, proceeding with full retrieval")
 
-        # ==================== 步骤 1: 查询增强（可选）====================
+        # ==================== Step 1: Query Enhancement (Optional) ====================
         enhanced_query = None
         if req.use_query_enhancement and query_enhancer.is_available():
-            logger.info("步骤 1/6: 查询增强（生成假设关键词）")
+            logger.info("Step 1/6: Query Enhancement (Generate Hypothetical Keywords)")
             enhanced_query = query_enhancer.generate_hypothetical_keywords(req.prompt)
 
             if enhanced_query:
-                logger.info(f"✓ 生成关键词: {enhanced_query[:100]}...")
+                logger.info(f"✓ Keywords Generated: {enhanced_query[:100]}...")
             else:
-                logger.warning("✗ 查询增强失败，降级为普通检索")
+                logger.warning("✗ Query Enhancement Failed, falling back to standard retrieval")
                 req.use_query_enhancement = False
 
-        # ==================== 步骤 2: 向量检索 ====================
+        # ==================== Step 2: Vector Search ====================
         step_num = "2/6" if req.use_query_enhancement else "1/5"
-        logger.info(f"步骤 {step_num}: 向量检索 (召回数: {config.RETRIEVAL_COUNT})")
+        logger.info(f"Step {step_num}: Vector Search (Recall: {config.RETRIEVAL_COUNT})")
 
-        # 原始问题检索
+        # Original Question Search
         query_vec = embedding_engine.encode([req.prompt])
         results_query = vector_db.query(query_vec, n_results=config.RETRIEVAL_COUNT)
 
@@ -306,11 +307,11 @@ async def query_rag(req: QueryRequest):
         raw_dists = results_query["distances"][0]
         raw_ids = results_query["ids"][0]
 
-        logger.info(f"✓ 原问题召回 {len(raw_docs)} 个候选文档")
+        logger.info(f"✓ Original Question recalled {len(raw_docs)} candidates")
 
-        # 如果启用查询增强，执行第二次检索
+        # If Query Enhancement Enabled, run second search
         if req.use_query_enhancement and enhanced_query:
-            logger.info(f"步骤 2.5/6: 使用关键词进行二次检索")
+            logger.info(f"Step 2.5/6: Secondary Search with Keywords")
 
             enhanced_vec = embedding_engine.encode([enhanced_query])
             results_enhanced = vector_db.query(enhanced_vec, n_results=config.RETRIEVAL_COUNT)
@@ -320,12 +321,12 @@ async def query_rag(req: QueryRequest):
             enhanced_dists = results_enhanced["distances"][0]
             enhanced_ids = results_enhanced["ids"][0]
 
-            logger.info(f"✓ 关键词召回 {len(enhanced_docs)} 个候选文档")
+            logger.info(f"✓ Keywords recalled {len(enhanced_docs)} candidates")
 
-            # 融合两次检索结果 - 使用加权平均
-            logger.info("融合两次检索结果（加权融合）...")
+            # Fuse results - Weighted Average
+            logger.info("Fusing results (Weighted)...")
 
-            # 构建ID到分数的映射
+            # Build ID to Score Map
             query_scores = {}
             enhanced_scores = {}
 
@@ -345,7 +346,7 @@ async def query_rag(req: QueryRequest):
                     'meta': enhanced_metas[i]
                 }
 
-            # 合并并加权
+            # Merge and Weight
             all_doc_ids = set(query_scores.keys()) | set(enhanced_scores.keys())
             merged_results = []
 
@@ -356,10 +357,10 @@ async def query_rag(req: QueryRequest):
                 q_sim = query_scores.get(doc_id, {}).get('similarity', 0)
                 e_sim = enhanced_scores.get(doc_id, {}).get('similarity', 0)
 
-                # 加权融合
+                # Weighted Fusion
                 final_sim = query_weight * q_sim + enhanced_weight * e_sim
 
-                # 使用原问题的文档内容（优先）
+                # Use original doc content (priority)
                 doc_content = query_scores.get(doc_id, {}).get('doc') or enhanced_scores.get(doc_id, {}).get('doc')
                 doc_meta = query_scores.get(doc_id, {}).get('meta') or enhanced_scores.get(doc_id, {}).get('meta')
 
@@ -371,44 +372,44 @@ async def query_rag(req: QueryRequest):
                     'meta': doc_meta
                 })
 
-            # 按融合后的相似度排序
+            # Sort by fused similarity
             merged_results.sort(key=lambda x: x['similarity'], reverse=True)
 
-            # 重新组织为原格式，保留前10个
+            # Reconstruct original format, keep top 10
             raw_docs = [r['doc'] for r in merged_results[:10]]
             raw_metas = [r['meta'] for r in merged_results[:10]]
             raw_dists = [r['distance'] for r in merged_results[:10]]
 
-            logger.info(f"✓ 融合完成，保留前 10 个结果")
+            logger.info(f"✓ Fusion complete, keeping top 10 results")
 
-            # 显示融合后的分数
-            logger.info("融合后的前10个结果:")
+            # Show fused scores
+            logger.info("Fused Top 10 Results:")
             for i, r in enumerate(merged_results[:10], 1):
                 h = r['meta'].get('parent_hash', 'N/A')
-                logger.info(f"  [{i:2d}] 融合分数: {r['similarity']*100:>6.2f}% | 父Hash: {h[:16]}...")
+                logger.info(f"  [{i:2d}] Fusion Score: {r['similarity']*100:>6.2f}% | ParentHash: {h[:16]}...")
 
-        # ==================== 步骤 3: 向量初筛 ====================
+        # ==================== Step 3: Preliminary Filtering ====================
         step_num = "3/6" if req.use_query_enhancement else "2/5"
 
-        # 根据是否使用精排选择不同的阈值
+        # Choose threshold based on rerank usage
         if req.use_rerank and rerank_engine.is_available():
             threshold = config.VECTOR_SEARCH_THRESHOLD_WITH_RERANK
-            threshold_mode = "宽松(精排模式)"
+            threshold_mode = "Loose (Precision Mode)"
         else:
             threshold = config.VECTOR_SEARCH_THRESHOLD_WITHOUT_RERANK
-            threshold_mode = "严格(直取模式)"
+            threshold_mode = "Strict (Fast Mode)"
 
-        logger.info(f"步骤 {step_num}: 向量初筛 (阈值: {threshold} - {threshold_mode})")
+        logger.info(f"Step {step_num}: Preliminary Filtering (Threshold: {threshold} - {threshold_mode})")
 
-        # 显示前10个候选的相似度分数和父Hash
+        # Show top 10 candidates scores
         logger.info("=" * 60)
-        logger.info("【向量检索】前10个候选（按相似度排序）:")
+        logger.info("【Vector Search】Top 10 Candidates (Sorted by Similarity):")
         for i in range(min(10, len(raw_docs))):
             sim = 1 - raw_dists[i]
             sim_pct = f"{round(sim * 100, 2)}%"
             h = raw_metas[i].get("parent_hash", "N/A")
             pass_mark = "✓" if sim >= threshold else "✗"
-            logger.info(f"  [{pass_mark}] [{i+1:2d}] 相似度: {sim_pct:>7s} | 父Hash: {h[:16]}...")
+            logger.info(f"  [{pass_mark}] [{i+1:2d}] Similarity: {sim_pct:>7s} | ParentHash: {h[:16]}...")
         logger.info("=" * 60)
 
         candidates = []
@@ -416,19 +417,17 @@ async def query_rag(req: QueryRequest):
 
         for i in range(len(raw_docs)):
             sim = 1 - raw_dists[i]
-            h = raw_metas[i].get("parent_hash", "N/A")
-
             if sim >= threshold:
                 candidates.append(raw_docs[i])
                 candidates_meta.append(raw_metas[i])
 
-        logger.info(f"✓ 筛选后剩余 {len(candidates)} 个候选文档")
+        logger.info(f"✓ {len(candidates)} candidates remaining after filtering")
 
-        # 如果没有候选文档，直接返回
+        # If no candidates, return early
         if not candidates:
-            logger.warning("未找到相关内容")
+            logger.warning("No relevant content found")
             return QueryResponse(
-                answer="抱歉，未找到与您问题相关的内容。",
+                answer="Sorry, I couldn't find any content related to your question.",
                 best_score="0%",
                 sources_count=0
             )
@@ -436,17 +435,17 @@ async def query_rag(req: QueryRequest):
         final_hashes = []
         score_summaries = []
 
-        # ==================== 步骤 4: 重排（可选）====================
+        # ==================== Step 4: Rerank (Optional) ====================
         if req.use_rerank and rerank_engine.is_available():
             step_num = "4/6" if req.use_query_enhancement else "3/5"
-            logger.info(f"步骤 {step_num}: 执行精排 (候选数: {len(candidates)})")
+            logger.info(f"Step {step_num}: Executing Rerank (Candidates: {len(candidates)})")
 
             rerank_data = rerank_engine.rerank(req.prompt, candidates)
 
             if rerank_data:
-                # 显示所有精排结果
+                # Show all rerank results
                 logger.info("=" * 60)
-                logger.info("【精排结果】按相关度排序:")
+                logger.info("【Rerank Results】Sorted by Relevance:")
 
                 for i, res in enumerate(rerank_data):
                     orig_idx = res["index"]
@@ -455,34 +454,34 @@ async def query_rag(req: QueryRequest):
 
                     score_pct = f"{round(score * 100, 2)}%"
 
-                    # 根据阈值过滤
+                    # Filter by threshold
                     if score >= config.RERANK_THRESHOLD:
-                        logger.info(f"  [✓ {i+1:2d}] 精排分数: {score_pct:>7s} | 父Hash: {p_hash[:16]}... (已选入)")
+                        logger.info(f"  [✓ {i+1:2d}] Rerank Score: {score_pct:>7s} | ParentHash: {p_hash[:16]}... (Selected)")
                         final_hashes.append(p_hash)
                     else:
-                        logger.info(f"  [✗ {i+1:2d}] 精排分数: {score_pct:>7s} | 父Hash: {p_hash[:16]}... (未达阈值)")
+                        logger.info(f"  [✗ {i+1:2d}] Rerank Score: {score_pct:>7s} | ParentHash: {p_hash[:16]}... (Below Threshold)")
 
                     score_summaries.append({"rank": i+1, "rerank_score": score_pct})
 
                 logger.info("=" * 60)
-                logger.info(f"✓ 精排完成，保留 {len(final_hashes)} 个高相关文档")
+                logger.info(f"✓ Rerank complete, keeping {len(final_hashes)} high-relevance docs")
             else:
-                logger.warning("精排失败，降级为直取模式")
+                logger.warning("Rerank failed, falling back to Fast Mode")
                 req.use_rerank = False
 
-        # ==================== 步骤 4: 直取模式（备选）====================
+        # ==================== Step 4: Fast Mode (Fallback) ====================
         if not req.use_rerank or not rerank_engine.is_available():
             step_num = "4/6" if req.use_query_enhancement else "3/5"
-            logger.info(f"步骤 {step_num}: 直取模式，选择前 {config.RERANK_TOP_K} 名")
+            logger.info(f"Step {step_num}: Fast Mode, selecting Top {config.RERANK_TOP_K}")
 
-            # 显示直取的结果
+            # Show results
             logger.info("=" * 60)
-            logger.info("【直取模式】按向量相似度排序:")
+            logger.info("【Fast Mode】Sorted by Vector Similarity:")
 
             for i in range(min(config.RERANK_TOP_K, len(candidates_meta))):
                 p_hash = candidates_meta[i].get("parent_hash", "N/A")
-                # 直取模式需要从candidates中获取，因为已经过滤了
-                # 找到这个candidate在原始列表中的位置
+                
+                # Find candidate index in raw list
                 candidate_idx = i
                 for j in range(len(raw_docs)):
                     if raw_metas[j].get("parent_hash") == p_hash:
@@ -492,37 +491,37 @@ async def query_rag(req: QueryRequest):
                 sim = 1 - raw_dists[candidate_idx]
                 score_pct = f"{round(sim * 100, 2)}%"
                 
-                # 直取模式使用严格阈值（默认50%）
+                # Strict threshold for Fast Mode
                 direct_threshold = config.VECTOR_SEARCH_THRESHOLD_WITHOUT_RERANK
                 
                 if sim >= direct_threshold:
-                    logger.info(f"  [✓ {i+1}] 相似度: {score_pct:>7s} | 父Hash: {p_hash[:16]}... (已选入)")
+                    logger.info(f"  [✓ {i+1}] Similarity: {score_pct:>7s} | ParentHash: {p_hash[:16]}... (Selected)")
                     final_hashes.append(p_hash)
                     score_summaries.append({"rank": i+1, "rerank_score": score_pct})
                 else:
-                    logger.info(f"  [✗ {i+1}] 相似度: {score_pct:>7s} | 父Hash: {p_hash[:16]}... (低于阈值{direct_threshold*100:.0f}%，已过滤)")
+                    logger.info(f"  [✗ {i+1}] Similarity: {score_pct:>7s} | ParentHash: {p_hash[:16]}... (Below Threshold {direct_threshold*100:.0f}%, Filtered)")
                     score_summaries.append({"rank": i+1, "rerank_score": score_pct})
 
             logger.info("=" * 60)
-            logger.info(f"✓ 直取 {len(final_hashes)} 个文档")
+            logger.info(f"✓ Directly selected {len(final_hashes)} documents")
 
-        # ==================== 检查是否有有效结果 ====================
+        # ==================== Check for Valid Results ====================
         if not final_hashes:
-            logger.warning("所有结果均低于相关度阈值，未找到足够相关的内容")
+            logger.warning("All results below relevance threshold, not enough context")
             return QueryResponse(
-                answer="抱歉，未找到与您问题足够相关的内容。\n\n建议：\n1. 尝试重新表述问题\n2. 使用不同的关键词\n3. 检查知识库是否包含相关信息",
+                answer="Sorry, I couldn't find enough relevant content.\n\nSuggestions:\n1. Rephrase your question\n2. Use different keywords\n3. Check if the knowledge base contains this info",
                 best_score=score_summaries[0]["rerank_score"] if score_summaries else "0%",
                 sources_count=0
             )
 
-        # ==================== 步骤 5: 获取完整上下文 ====================
+        # ==================== Step 5: Get Full Context ====================
         step_num = "5/6" if req.use_query_enhancement else "4/5"
-        logger.info(f"步骤 {step_num}: 组装上下文")
+        logger.info(f"Step {step_num}: Assembling Context")
 
         unique_hashes = list(dict.fromkeys(final_hashes))
 
-        # 记录所有最终选定的父hash
-        logger.info(f"最终选定的父Hash列表 (共 {len(unique_hashes)} 个):")
+        # Log all final parent hashes
+        logger.info(f"Final Parent Hashes (Total {len(unique_hashes)}):")
         for idx, h in enumerate(unique_hashes, 1):
             logger.info(f"  [{idx}] Hash: {h}")
 
@@ -531,55 +530,55 @@ async def query_rag(req: QueryRequest):
             if parent_store.get(h)
         ]
 
-        logger.info(f"✓ 提取 {len(retrieved_sections)} 个完整章节")
+        logger.info(f"✓ Extracted {len(retrieved_sections)} full sections")
 
         if not retrieved_sections:
-            logger.warning("未能获取有效上下文")
+            logger.warning("Failed to retrieve valid context")
             return QueryResponse(
-                answer="抱歉，未能找到足够相关的内容。",
+                answer="Sorry, unable to retrieve relevant content.",
                 best_score=score_summaries[0]["rerank_score"] if score_summaries else "0%",
                 sources_count=0
             )
 
-        # ==================== 步骤 6: LLM 生成回答 ====================
+        # ==================== Step 6: LLM Generation ====================
         step_num = "6/6" if req.use_query_enhancement else "5/5"
-        logger.info(f"步骤 {step_num}: LLM 生成回答")
+        logger.info(f"Step {step_num}: LLM Generating Answer")
 
         context = "\n\n---\n\n".join(retrieved_sections)
-        logger.info(f"上下文总长度: {len(context)} 字符")
-        logger.info(f"传给LLM的父节点数量: {len(retrieved_sections)}")
+        logger.info(f"Total Context Length: {len(context)} chars")
+        logger.info(f"Parent Nodes sent to LLM: {len(retrieved_sections)}")
 
         try:
             answer = call_llm(context, req.prompt)
-            logger.info(f"✓ 回答生成成功，长度: {len(answer)} 字符")
+            logger.info(f"✓ Answer generated successfully, length: {len(answer)} chars")
         except LLMAPIError as e:
-            logger.error(f"LLM 生成失败: {e.message}")
-            answer = "抱歉，AI 生成回答时出现错误，请稍后重试。"
+            logger.error(f"LLM Generation Failed: {e.message}")
+            answer = "Sorry, an error occurred while generating the answer. Please try again later."
 
-        # ==================== 添加到缓存 ====================
-        # 注意：目前自动缓存已禁用，只有用户确认满意或管理员手动添加才会缓存
+        # ==================== Add to Cache ====================
+        # Note: Auto-cache disabled, only explicit user confirmation or admin add works
         # if semantic_cache and semantic_cache.is_available():
-        #     logger.info("💾 添加答案到语义缓存")
+        #     logger.info("💾 Adding answer to semantic cache")
         #     semantic_cache.set(req.prompt, answer)
 
-        # ==================== 返回结果 ====================
+        # ==================== Return Results ====================
         logger.info("=" * 60)
-        logger.info("[查询完成]")
+        logger.info("[Query Complete]")
         logger.info("=" * 60)
 
         return QueryResponse(
             answer=answer,
             best_score=score_summaries[0]["rerank_score"] if score_summaries else "0%",
             sources_count=len(retrieved_sections),
-            source_hashes=unique_hashes  # 返回源文档的 parent_hash 列表
+            source_hashes=unique_hashes
         )
 
     except Exception as e:
-        logger.error(f"查询处理异常: {str(e)}", exc_info=True)
+        logger.error(f"Query Processing Exception: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=error_response(
-                error="查询处理失败",
+                error="Query Processing Failed",
                 details=str(e),
                 code="QUERY_ERROR"
             )
@@ -588,16 +587,16 @@ async def query_rag(req: QueryRequest):
 @app.post("/cache/confirm")
 async def confirm_cache(req: CacheConfirmRequest):
     """
-    处理用户的缓存确认
+    Handle user cache confirmation
 
-    参数:
-        req: 确认请求，包含确认ID和用户决定
+    Args:
+        req: Confirmation request
 
-    返回:
-        如果用户确认，返回缓存答案；否则提示重新查询
+    Returns:
+        Cached answer if confirmed, else message to re-query
     """
     if not semantic_cache or not semantic_cache.is_available():
-        raise HTTPException(status_code=503, detail="缓存服务不可用")
+        raise HTTPException(status_code=503, detail="Cache service unavailable")
 
     cached_answer = await semantic_cache.confirm_cache(
         req.confirmation_id,
@@ -605,36 +604,35 @@ async def confirm_cache(req: CacheConfirmRequest):
     )
 
     if req.user_confirmed and cached_answer:
-        # 用户确认使用缓存
+        # User confirmed usage
         return {
             "answer": cached_answer,
             "from_cache": True,
             "best_score": "95%+",
             "sources_count": 0,
-            "message": "已使用缓存答案"
+            "message": "Used cached answer"
         }
     else:
-        # 用户拒绝或确认ID过期 → 需要前端重新发起查询
+        # User denied or ID expired -> Re-query
         return {
             "need_requery": True,
-            "message": "请重新提问以获取新答案"
+            "message": "Please re-ask to get a new answer"
         }
 
 
 @app.post("/cache/feedback")
 async def cache_feedback(req: FeedbackRequest):
     """
-    用户满意度反馈
+    User Satisfaction Feedback
 
-    当用户对答案满意时，将问答对添加到高质量缓存
+    If user is satisfied, add Q&A pair to high-quality cache
     """
     if not semantic_cache or not semantic_cache.is_available():
-        return {"status": "unavailable", "message": "缓存服务不可用"}
+        return {"status": "unavailable", "message": "Cache service unavailable"}
 
     try:
         if req.satisfied:
-            # 用户满意，添加到高质量缓存
-            # 将 source_hashes 转换为 JSON 字符串
+            # User satisfied, add to high quality cache
             import json
             source_info = json.dumps(req.source_hashes) if req.source_hashes else None
             
@@ -645,30 +643,30 @@ async def cache_feedback(req: FeedbackRequest):
                 quality_score=5,
                 source_info=source_info
             )
-            logger.info(f"✅ 用户反馈满意，已添加到高质量缓存: {req.question[:50]}")
+            logger.info(f"✅ User feedback satisfied, added to HQ cache: {req.question[:50]}")
             return {
                 "status": "success",
-                "message": "感谢反馈！已保存到精选问答"
+                "message": "Thank you! Saved to featured Q&A"
             }
         else:
-            # 用户不满意，记录但不缓存
-            logger.info(f"❌ 用户反馈不满意: {req.question[:50]}")
+            # User unsatisfied, log but don't cache
+            logger.info(f"❌ User feedback unsatisfied: {req.question[:50]}")
             return {
                 "status": "success",
-                "message": "感谢反馈！我们会改进"
+                "message": "Thank you for your feedback!"
             }
     except Exception as e:
-        logger.error(f"处理用户反馈时出错: {e}")
-        raise HTTPException(status_code=500, detail="处理反馈失败")
+        logger.error(f"Error processing feedback: {e}")
+        raise HTTPException(status_code=500, detail="Feedback processing failed")
 
 
 @app.get("/cache/popular")
 async def get_popular_questions():
     """
-    获取热门问题（供前端显示）
+    Get popular questions (for frontend)
 
-    返回:
-        热门问题列表，包含问题、访问次数、相似问题数
+    Returns:
+        List of popular questions
     """
     if not semantic_cache or not semantic_cache.is_available():
         return {"popular_questions": []}
@@ -680,15 +678,15 @@ async def get_popular_questions():
 @app.get("/cache/stats")
 async def get_cache_stats():
     """
-    获取缓存统计信息
+    Get cache statistics
 
-    返回:
-        缓存统计数据，包含缓存条目数、命中次数等
+    Returns:
+        Cache stats
     """
     if not semantic_cache or not semantic_cache.is_available():
         return {
             "available": False,
-            "message": "缓存服务不可用"
+            "message": "Cache service unavailable"
         }
 
     stats = semantic_cache.get_cache_stats()
@@ -697,7 +695,7 @@ async def get_cache_stats():
 
 @app.get("/health")
 async def health_check():
-    """健康检查接口"""
+    """Health Check Endpoint"""
     cache_available = semantic_cache and semantic_cache.is_available()
     return {
         "status": "healthy",
@@ -707,26 +705,26 @@ async def health_check():
     }
 
 
-# ==================== 管理员 API ====================
+# ==================== Admin API ====================
 
 @app.post("/admin/login")
 async def admin_login(req: AdminLoginRequest):
     """
-    管理员登录
+    Admin Login
 
-    返回:
-        认证令牌和过期时间
+    Returns:
+        Auth token and expiration
     """
     if not verify_admin(req.username, req.password):
-        logger.warning(f"管理员登录失败: {req.username}")
-        raise HTTPException(status_code=401, detail="用户名或密码错误")
+        logger.warning(f"Admin login failed: {req.username}")
+        raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    # 生成 token
+    # Generate token
     token = generate_admin_token()
     expire_time = datetime.now() + timedelta(hours=1)
     admin_sessions[token] = expire_time
 
-    logger.info(f"✅ 管理员登录成功: {req.username}")
+    logger.info(f"✅ Admin login successful: {req.username}")
     return {
         "token": token,
         "expires_in": 3600,
@@ -737,13 +735,13 @@ async def admin_login(req: AdminLoginRequest):
 @app.post("/admin/logout")
 async def admin_logout(authorized: bool = Depends(verify_admin_token),
                        credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """管理员登出"""
+    """Admin Logout"""
     token = credentials.credentials
     if token in admin_sessions:
         del admin_sessions[token]
-        logger.info("✅ 管理员登出成功")
+        logger.info("✅ Admin logout successful")
     
-    return {"status": "success", "message": "已登出"}
+    return {"status": "success", "message": "Logged out"}
 
 
 @app.get("/admin/hot-questions")
@@ -753,20 +751,20 @@ async def get_hot_questions(
     authorized: bool = Depends(verify_admin_token)
 ):
     """
-    获取热门问题列表（管理员）
+    Get Hot Questions (Admin)
 
-    参数:
-        limit: 返回数量
-        min_count: 最小提问次数
+    Args:
+        limit: Result limit
+        min_count: Min query count
 
-    返回:
-        热门问题列表
+    Returns:
+        Hot questions list
     """
     if not semantic_cache or not semantic_cache.is_available():
         return {"hot_questions": []}
 
     try:
-        # 获取所有热门问题
+        # Get all popular questions
         popular = semantic_cache.redis.zrevrange("cache:popular", 0, limit - 1, withscores=True)
         
         result = []
@@ -777,7 +775,7 @@ async def get_hot_questions(
             question = question_bytes.decode('utf-8') if isinstance(question_bytes, bytes) else question_bytes
             cache_id = semantic_cache._compute_hash(question)
             
-            # 检查是否已缓存
+            # Check if cached
             cached_data = semantic_cache.redis.hgetall(f"cache:question:{cache_id}")
             is_cached = bool(cached_data)
             cache_type = None
@@ -796,8 +794,8 @@ async def get_hot_questions(
         return {"hot_questions": result}
         
     except Exception as e:
-        logger.error(f"获取热门问题时出错: {e}")
-        raise HTTPException(status_code=500, detail="获取热门问题失败")
+        logger.error(f"Error getting hot questions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get hot questions")
 
 
 @app.get("/admin/cache/list")
@@ -806,10 +804,10 @@ async def get_cache_list(
     authorized: bool = Depends(verify_admin_token)
 ):
     """
-    获取所有缓存列表（管理员）
+    Get all cached questions (Admin)
 
-    返回:
-        缓存问题列表
+    Returns:
+        Cached questions list
     """
     if not semantic_cache or not semantic_cache.is_available():
         return {"cached_questions": []}
@@ -819,8 +817,8 @@ async def get_cache_list(
         return {"cached_questions": cached_questions}
         
     except Exception as e:
-        logger.error(f"获取缓存列表时出错: {e}")
-        raise HTTPException(status_code=500, detail="获取缓存列表失败")
+        logger.error(f"Error getting cache list: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get cache list")
 
 
 @app.post("/admin/cache/add")
@@ -829,35 +827,35 @@ async def add_manual_cache(
     authorized: bool = Depends(verify_admin_token)
 ):
     """
-    手动添加缓存（管理员）
+    Manually add cache (Admin)
 
-    用于添加精选问答对
+    Used for adding curated Q&A pairs
     """
     if not semantic_cache or not semantic_cache.is_available():
-        raise HTTPException(status_code=503, detail="缓存服务不可用")
+        raise HTTPException(status_code=503, detail="Cache service unavailable")
 
     try:
-        # 添加到高优先级缓存
+        # Add to HQ cache
         semantic_cache.set(
             req.question,
             req.answer,
             cache_type="manual",
             quality_score=req.quality_score,
-            source_info=req.source_info  # 管理员填写的源文件信息
+            source_info=req.source_info
         )
         
         cache_id = semantic_cache._compute_hash(req.question)
-        logger.info(f"✅ 管理员手动添加缓存: {req.question[:50]}")
+        logger.info(f"✅ Admin manually added cache: {req.question[:50]}")
         
         return {
             "status": "success",
             "cache_id": cache_id,
-            "message": "已添加到高优先级缓存"
+            "message": "Added to high-priority cache"
         }
         
     except Exception as e:
-        logger.error(f"手动添加缓存时出错: {e}")
-        raise HTTPException(status_code=500, detail="添加缓存失败")
+        logger.error(f"Error manually adding cache: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add cache")
 
 
 @app.delete("/admin/cache/clear")
@@ -866,33 +864,33 @@ async def clear_cache(
     authorized: bool = Depends(verify_admin_token)
 ):
     """
-    清除缓存（管理员）
+    Clear Cache (Admin)
 
-    参数:
-        cache_types: 要清除的缓存类型列表（None 表示全部）
-        confirm: 必须为 true 才能执行
+    Args:
+        cache_types: List of types to clear (None for all)
+        confirm: Must be true
     """
     if not req.confirm:
-        raise HTTPException(status_code=400, detail="必须确认清除操作")
+        raise HTTPException(status_code=400, detail="Confirmation required")
 
     if not semantic_cache or not semantic_cache.is_available():
-        raise HTTPException(status_code=503, detail="缓存服务不可用")
+        raise HTTPException(status_code=503, detail="Cache service unavailable")
 
     try:
         deleted_count = semantic_cache.clear_cache(req.cache_types)
         
-        cache_types_str = ", ".join(req.cache_types) if req.cache_types else "所有"
-        logger.warning(f"🗑️ 管理员清除缓存: {cache_types_str} ({deleted_count} 条)")
+        cache_types_str = ", ".join(req.cache_types) if req.cache_types else "ALL"
+        logger.warning(f"🗑️ Admin cleared cache: {cache_types_str} ({deleted_count} entries)")
         
         return {
             "status": "success",
             "deleted_count": deleted_count,
-            "message": f"已清除 {deleted_count} 条缓存"
+            "message": f"Cleared {deleted_count} cache entries"
         }
         
     except Exception as e:
-        logger.error(f"清除缓存时出错: {e}")
-        raise HTTPException(status_code=500, detail="清除缓存失败")
+        logger.error(f"Error clearing cache: {e}")
+        raise HTTPException(status_code=500, detail="Failed to clear cache")
 
 
 @app.delete("/admin/cache/{cache_id}")
@@ -900,27 +898,27 @@ async def delete_cache_item(
     cache_id: str,
     authorized: bool = Depends(verify_admin_token)
 ):
-    """删除单个缓存条目（管理员）"""
+    """Delete single cache entry (Admin)"""
     if not semantic_cache or not semantic_cache.is_available():
-        raise HTTPException(status_code=503, detail="缓存服务不可用")
+        raise HTTPException(status_code=503, detail="Cache service unavailable")
 
     try:
         semantic_cache._evict_cache(cache_id)
-        logger.info(f"🗑️ 管理员删除缓存: {cache_id}")
+        logger.info(f"🗑️ Admin deleted cache: {cache_id}")
         
         return {
             "status": "success",
-            "message": "已删除缓存条目"
+            "message": "Cache entry deleted"
         }
         
     except Exception as e:
-        logger.error(f"删除缓存时出错: {e}")
-        raise HTTPException(status_code=500, detail="删除缓存失败")
+        logger.error(f"Error deleting cache: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete cache")
 
 
 @app.get("/stats")
 async def get_stats():
-    """获取系统统计信息"""
+    """Get System Stats"""
     return {
         "vector_db": {
             "document_count": vector_db.count(),
@@ -938,33 +936,33 @@ async def get_stats():
     }
 
 
-# ==================== 静态文件挂载 ====================
-# 图片目录
+# ==================== Static Files Mount ====================
+# Images
 if config.IMAGE_DIR.exists():
     app.mount(
         "/images",
         StaticFiles(directory=str(config.IMAGE_DIR)),
         name="images"
     )
-    logger.info(f"✓ 挂载图片目录: {config.IMAGE_DIR}")
+    logger.info(f"✓ Mounted Image Directory: {config.IMAGE_DIR}")
 
-# 前端静态文件
+# Frontend Static Files
 if config.STATIC_DIR.exists():
     app.mount(
         "/",
         StaticFiles(directory=str(config.STATIC_DIR), html=True),
         name="static"
     )
-    logger.info(f"✓ 挂载静态文件目录: {config.STATIC_DIR}")
+    logger.info(f"✓ Mounted Static Directory: {config.STATIC_DIR}")
 
 
 def main():
-    """主函数 - 启动服务器"""
+    """Main Function - Start Server"""
     import uvicorn
 
     logger.info("=" * 60)
-    logger.info(f"启动服务器: http://{config.APP_HOST}:{config.APP_PORT}")
-    logger.info(f"API 文档: http://{config.APP_HOST}:{config.APP_PORT}/docs")
+    logger.info(f"Starting Server: http://{config.APP_HOST}:{config.APP_PORT}")
+    logger.info(f"API Docs: http://{config.APP_HOST}:{config.APP_PORT}/docs")
     logger.info("=" * 60)
 
     uvicorn.run(

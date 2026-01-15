@@ -1,7 +1,7 @@
 """
-嵌入模型模块 - RAG 智能问答系统
-作者：RAG 项目团队
-描述：管理文本嵌入模型，提供文本向量化功能
+Embedding Model Module - RAG Intelligent Q&A System
+Author: RAG Project Team
+Description: Manages text embedding models, providing text vectorization features.
 """
 
 import logging
@@ -14,26 +14,26 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddingEngine:
-    """嵌入引擎类 - 负责文本向量化"""
+    """Embedding Engine Class - Handles text vectorization"""
 
     def __init__(self):
-        """初始化嵌入模型"""
+        """Initialize Embedding Model"""
         self.model = None
         self._load_model()
 
     def _load_model(self):
         """
-        加载本地嵌入模型
+        Load local embedding model
 
-        异常:
-            ModelLoadError: 模型加载失败时抛出
+        Raises:
+            ModelLoadError: If model loading fails
         """
         try:
-            logger.info(f"正在加载本地嵌入模型: {config.LOCAL_MODEL_PATH}")
+            logger.info(f"Loading local embedding model: {config.LOCAL_MODEL_PATH}")
             self.model = SentenceTransformer(config.LOCAL_MODEL_PATH)
-            logger.info("嵌入模型加载成功")
+            logger.info("Embedding model loaded successfully")
         except Exception as e:
-            error_msg = f"嵌入模型加载失败: {str(e)}"
+            error_msg = f"Failed to load embedding model: {str(e)}"
             logger.error(error_msg)
             raise ModelLoadError(error_msg, details=str(e))
 
@@ -45,25 +45,25 @@ class EmbeddingEngine:
         **kwargs
     ) -> List[List[float]]:
         """
-        将文本列表编码为向量
+        Encode text list into vectors
 
-        参数:
-            sentences: 待编码的文本列表
-            batch_size: 批处理大小
-            show_progress_bar: 是否显示进度条
-            **kwargs: 其他参数传递给模型
+        Args:
+            sentences: List of text to encode
+            batch_size: Batch size
+            show_progress_bar: Whether to show progress bar
+            **kwargs: Other arguments passed to model
 
-        返回:
-            文本向量列表（二维列表）
+        Returns:
+            List of text vectors (2D list)
 
-        异常:
-            EmbeddingError: 编码失败时抛出
+        Raises:
+            EmbeddingError: If encoding fails
         """
         if not self.model:
-            raise EmbeddingError("嵌入模型未初始化")
+            raise EmbeddingError("Embedding model not initialized")
 
         try:
-            # 返回列表格式，符合 ChromaDB 手动插入要求
+            # Return list format, compatible with ChromaDB manual insertion
             embeddings = self.model.encode(
                 sentences,
                 batch_size=batch_size,
@@ -72,21 +72,21 @@ class EmbeddingEngine:
             )
             return embeddings.tolist()
         except Exception as e:
-            error_msg = f"文本编码失败: {str(e)}"
+            error_msg = f"Text encoding failed: {str(e)}"
             logger.error(error_msg)
             raise EmbeddingError(error_msg, details=str(e))
 
     def get_embedding_dimension(self) -> int:
         """
-        获取嵌入向量的维度
+        Get embedding vector dimension
 
-        返回:
-            向量维度
+        Returns:
+            Vector dimension
         """
         if self.model:
             return self.model.get_sentence_embedding_dimension()
         return 0
 
 
-# 全局嵌入引擎实例（单例模式）
+# Global Embedding Engine Instance (Singleton)
 embedding_engine = EmbeddingEngine()

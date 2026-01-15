@@ -1,7 +1,7 @@
 """
-向量数据库模块 - RAG 智能问答系统
-作者：RAG 项目团队
-描述：管理 ChromaDB 向量数据库，提供文档存储和检索功能
+Vector Store Module - RAG Intelligent Q&A System
+Author: RAG Project Team
+Description: Manages ChromaDB vector database, providing document storage and retrieval.
 """
 
 import chromadb
@@ -14,38 +14,38 @@ logger = logging.getLogger(__name__)
 
 
 class VectorStoreManager:
-    """向量存储管理器 - 负责向量数据库操作"""
+    """Vector Store Manager - Handles vector database operations"""
 
     def __init__(self):
-        """初始化向量数据库连接"""
+        """Initialize Vector Database Connection"""
         self.client = None
         self.collection = None
         self._initialize_db()
 
     def _initialize_db(self):
         """
-        初始化 ChromaDB 客户端和集合
+        Initialize ChromaDB client and collection
 
-        异常:
-            VectorStoreError: 初始化失败时抛出
+        Raises:
+            VectorStoreError: If initialization fails
         """
         try:
-            logger.info(f"正在连接 ChromaDB，路径: {config.CHROMA_PATH}")
+            logger.info(f"Connecting to ChromaDB, path: {config.CHROMA_PATH}")
 
-            # 创建持久化客户端
+            # Create Persistent Client
             self.client = chromadb.PersistentClient(path=str(config.CHROMA_PATH))
 
-            # 获取或创建集合，使用余弦相似度
+            # Get or create collection, using cosine similarity
             self.collection = self.client.get_or_create_collection(
                 name=config.CHROMA_COLLECTION_NAME,
                 metadata={"hnsw:space": "cosine"}
             )
 
-            logger.info(f"ChromaDB 连接成功，集合名称: {config.CHROMA_COLLECTION_NAME}")
-            logger.info(f"当前集合文档数量: {self.collection.count()}")
+            logger.info(f"ChromaDB connected successfully, Collection: {config.CHROMA_COLLECTION_NAME}")
+            logger.info(f"Current document count: {self.collection.count()}")
 
         except Exception as e:
-            error_msg = f"ChromaDB 初始化失败: {str(e)}"
+            error_msg = f"ChromaDB initialization failed: {str(e)}"
             logger.error(error_msg)
             raise VectorStoreError(error_msg, details=str(e))
 
@@ -57,16 +57,16 @@ class VectorStoreManager:
         metadatas: List[Dict[str, Any]]
     ):
         """
-        向向量数据库添加文档
+        Add documents to vector database
 
-        参数:
-            ids: 文档 ID 列表
-            embeddings: 文档向量列表
-            documents: 文档文本列表
-            metadatas: 文档元数据列表
+        Args:
+            ids: List of document IDs
+            embeddings: List of document vectors
+            documents: List of document texts
+            metadatas: List of document metadata
 
-        异常:
-            VectorStoreError: 添加文档失败时抛出
+        Raises:
+            VectorStoreError: If addition fails
         """
         try:
             self.collection.add(
@@ -75,9 +75,9 @@ class VectorStoreManager:
                 documents=documents,
                 metadatas=metadatas
             )
-            logger.info(f"成功添加 {len(ids)} 个文档到向量数据库")
+            logger.info(f"Successfully added {len(ids)} documents to vector database")
         except Exception as e:
-            error_msg = f"添加文档到向量数据库失败: {str(e)}"
+            error_msg = f"Failed to add documents to vector database: {str(e)}"
             logger.error(error_msg)
             raise VectorStoreError(error_msg, details=str(e))
 
@@ -87,60 +87,60 @@ class VectorStoreManager:
         n_results: int = 10
     ) -> Dict[str, Any]:
         """
-        查询向量数据库
+        Query the vector database
 
-        参数:
-            query_embeddings: 查询向量列表
-            n_results: 返回结果数量
+        Args:
+            query_embeddings: List of query vectors
+            n_results: Number of results to return
 
-        返回:
-            查询结果字典，包含 documents, metadatas, distances
+        Returns:
+            Query results dict containing documents, metadatas, distances
 
-        异常:
-            VectorStoreError: 查询失败时抛出
+        Raises:
+            VectorStoreError: If query fails
         """
         try:
             results = self.collection.query(
                 query_embeddings=query_embeddings,
                 n_results=n_results
             )
-            logger.debug(f"向量查询成功，返回 {n_results} 个结果")
+            logger.debug(f"Vector query successful, returned {n_results} results")
             return results
         except Exception as e:
-            error_msg = f"向量数据库查询失败: {str(e)}"
+            error_msg = f"Vector database query failed: {str(e)}"
             logger.error(error_msg)
             raise VectorStoreError(error_msg, details=str(e))
 
     def count(self) -> int:
         """
-        获取集合中的文档数量
+        Get total document count in collection
 
-        返回:
-            文档数量
+        Returns:
+            Document count
         """
         try:
             return self.collection.count()
         except Exception as e:
-            logger.error(f"获取文档数量失败: {e}")
+            logger.error(f"Failed to get document count: {e}")
             return 0
 
     def delete_collection(self):
-        """删除当前集合（慎用）"""
+        """Delete current collection (Use with caution)"""
         try:
             self.client.delete_collection(name=config.CHROMA_COLLECTION_NAME)
-            logger.warning(f"已删除集合: {config.CHROMA_COLLECTION_NAME}")
+            logger.warning(f"Deleted collection: {config.CHROMA_COLLECTION_NAME}")
         except Exception as e:
-            logger.error(f"删除集合失败: {e}")
+            logger.error(f"Failed to delete collection: {e}")
 
     def reset(self):
-        """重置向量数据库（删除并重新创建）"""
+        """Reset vector database (Delete and Recreate)"""
         try:
             self.delete_collection()
             self._initialize_db()
-            logger.info("向量数据库已重置")
+            logger.info("Vector database reset")
         except Exception as e:
-            logger.error(f"重置向量数据库失败: {e}")
+            logger.error(f"Failed to reset vector database: {e}")
 
 
-# 全局向量数据库实例（单例模式）
+# Global Vector Database Instance (Singleton)
 vector_db = VectorStoreManager()

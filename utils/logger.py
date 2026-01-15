@@ -1,7 +1,7 @@
 """
-日志管理模块 - RAG 智能问答系统
-作者：RAG 项目团队
-描述：配置和管理系统日志记录
+Logger Management Module - RAG Intelligent Q&A System
+Author: RAG Project Team
+Description: Configures and manages system logging.
 """
 
 import logging
@@ -12,20 +12,20 @@ from typing import Optional
 
 
 class ColoredFormatter(logging.Formatter):
-    """彩色日志格式化器"""
+    """Colored Log Formatter"""
 
-    # 颜色代码
+    # Color codes
     COLORS = {
-        'DEBUG': '\033[36m',      # 青色
-        'INFO': '\033[32m',       # 绿色
-        'WARNING': '\033[33m',    # 黄色
-        'ERROR': '\033[31m',      # 红色
-        'CRITICAL': '\033[35m',   # 紫色
+        'DEBUG': '\033[36m',      # Cyan
+        'INFO': '\033[32m',       # Green
+        'WARNING': '\033[33m',    # Yellow
+        'ERROR': '\033[31m',      # Red
+        'CRITICAL': '\033[35m',   # Purple
     }
     RESET = '\033[0m'
 
     def format(self, record):
-        """格式化日志记录"""
+        """Format log record"""
         log_color = self.COLORS.get(record.levelname, self.RESET)
         record.levelname = f"{log_color}{record.levelname}{self.RESET}"
         return super().format(record)
@@ -39,36 +39,36 @@ def setup_logger(
     enable_file_logging: bool = True
 ) -> logging.Logger:
     """
-    设置日志记录器
+    Setup Logger
 
-    参数:
-        name: 日志记录器名称
-        log_level: 日志级别
-        log_format: 日志格式
-        log_dir: 日志文件目录
-        enable_file_logging: 是否启用文件日志
+    Args:
+        name: Logger name
+        log_level: Log level
+        log_format: Log format
+        log_dir: Log file directory
+        enable_file_logging: Whether to enable file logging
 
-    返回:
-        配置好的日志记录器
+    Returns:
+        Configured logger instance
     """
     logger = logging.getLogger(name)
     logger.setLevel(log_level)
 
-    # 清除现有的处理器
+    # Clear existing handlers
     logger.handlers.clear()
 
-    # 控制台处理器（彩色输出）
+    # Console Handler (Colored)
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(log_level)
     console_formatter = ColoredFormatter(log_format)
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
-    # 文件处理器
+    # File Handler
     if enable_file_logging and log_dir:
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        # 按日期创建日志文件
+        # Create log file by date
         log_filename = f"{name}_{datetime.now().strftime('%Y%m%d')}.log"
         log_file_path = log_dir / log_filename
 
@@ -86,12 +86,12 @@ def setup_logger(
 
 def get_logger(name: str) -> logging.Logger:
     """
-    获取日志记录器
+    Get logger instance
 
-    参数:
-        name: 日志记录器名称
+    Args:
+        name: Logger name
 
-    返回:
-        日志记录器实例
+    Returns:
+        Logger instance
     """
     return logging.getLogger(name)
