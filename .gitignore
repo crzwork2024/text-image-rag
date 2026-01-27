@@ -66,6 +66,11 @@ book.md
 # 图片目录
 images/
 
+# PDF 转换输出
+pdf_output/
+**/image*/
+test/
+
 # IDE 配置
 .vscode/
 .idea/

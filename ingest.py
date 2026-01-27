@@ -153,15 +153,59 @@ def main():
         help="Markdown file path (defaults to config)"
     )
     parser.add_argument(
+        "--pdf",
+        type=str,
+        help="PDF file path (will convert to Markdown first)"
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Force re-ingest (clear existing data)"
     )
+    parser.add_argument(
+        "--no-gpu",
+        action="store_true",
+        help="Disable GPU acceleration for PDF conversion (use CPU)"
+    )
+    parser.add_argument(
+        "--gpu-id",
+        type=int,
+        default=None,
+        help="GPU device ID for PDF conversion (defaults to config)"
+    )
 
     args = parser.parse_args()
 
-    # Parse file path
-    md_file_path = Path(args.file) if args.file else None
+    # Handle PDF conversion if needed
+    if args.pdf:
+        logger.info("PDF file provided, converting to Markdown first...")
+        try:
+            from pdf_converter import PDFConverter
+            
+            # Create converter
+            use_gpu = not args.no_gpu and config.PDF_USE_GPU
+            converter = PDFConverter(use_gpu=use_gpu)
+            
+            # Convert and prepare
+            gpu_id = args.gpu_id if args.gpu_id is not None else config.PDF_GPU_ID
+            final_md, final_images = converter.convert_and_prepare(
+                args.pdf,
+                copy_to_project=True,
+                gpu_id=gpu_id
+            )
+            
+            logger.info(f"PDF conversion completed: {final_md}")
+            md_file_path = final_md
+            
+        except ImportError:
+            logger.error("PDF conversion requires 'magic-pdf' package. Install with: pip install magic-pdf[full]")
+            exit(1)
+        except Exception as e:
+            logger.error(f"PDF conversion failed: {e}")
+            exit(1)
+    else:
+        # Parse file path
+        md_file_path = Path(args.file) if args.file else None
 
     try:
         success = run_ingestion(

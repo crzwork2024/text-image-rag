@@ -33,6 +33,7 @@ The RAG Intelligent Q&A System is a robust solution combining advanced Vector Re
 - ⚡ **Adaptive Thresholds**: Automatically applies optimal thresholds for different modes.
 - 📚 **Smart Chunking**: Parent-Child indexing strategy for better context.
 - 💾 **Semantic Cache**: Redis-based caching to save costs and reduce latency.
+- 📄 **PDF Support**: Integrated MinerU for automatic PDF to Markdown conversion with GPU acceleration.
 - 🎨 **Modern UI**: Clean and responsive Web Interface.
 - 📊 **Detailed Logging**: Comprehensive logs for debugging and analysis.
 
@@ -74,6 +75,8 @@ rag_project/
 ├── main.py                   # FastAPI Application Entry
 ├── ingest.py                 # Data Ingestion Script
 ├── run.py                    # Quick Start Script
+├── pdf_converter.py          # PDF to Markdown Converter (MinerU)
+├── convert_pdf.py            # PDF Conversion CLI Tool
 ├── requirements.txt          # Python Dependencies
 ├── env.example               # Environment Variables Template
 ├── README.md                 # Documentation
@@ -138,7 +141,27 @@ rag_project/
    Place your model in `models/acge_text_embedding` or configure `LOCAL_EMBEDDING_MODEL_PATH` in `.env`.
 
 6. **Prepare Data**
+   
+   **Option A: Use Existing Markdown**
    Place your `book.md` in the project root.
+
+   **Option B: Convert from PDF (Recommended)**
+   ```bash
+   # Convert PDF with GPU acceleration (default)
+   python convert_pdf.py your_document.pdf
+
+   # Or convert using CPU only
+   python convert_pdf.py your_document.pdf --no-gpu
+
+   # Or use ingest.py directly (convert + ingest in one step)
+   python ingest.py --pdf your_document.pdf --force
+   ```
+
+   The PDF converter will:
+   - Convert PDF to Markdown using MinerU
+   - Extract and organize images
+   - Copy files to the project directory
+   - Update image paths automatically
 
 7. **Ingest Data**
    ```bash
@@ -154,6 +177,52 @@ rag_project/
    - **API Docs**: http://localhost:8000/docs
 
 ## Feature Details
+
+### PDF to Markdown Conversion
+
+The system integrates **MinerU**, a powerful PDF parsing tool, to automatically convert PDF documents to Markdown format with image extraction.
+
+**Features**:
+- 🚀 **GPU Acceleration**: Faster processing with CUDA-enabled GPUs
+- 📷 **Image Extraction**: Automatically extracts and organizes images
+- 🔄 **Path Management**: Automatically updates image paths in Markdown
+- ⚙️ **Flexible Options**: Support for both GPU and CPU modes
+
+**Usage**:
+
+```bash
+# Basic conversion (GPU mode, default)
+python convert_pdf.py document.pdf
+
+# CPU mode (no GPU)
+python convert_pdf.py document.pdf --no-gpu
+
+# Specify GPU device
+python convert_pdf.py document.pdf --gpu-id 1
+
+# Advanced: Keep original output structure
+python convert_pdf.py document.pdf --no-copy --output-dir custom_output
+
+# One-step convert and ingest
+python ingest.py --pdf document.pdf --force
+```
+
+**Output Structure**:
+```
+pdf_output/
+└── document/
+    └── auto/
+        ├── document.md       # Converted Markdown
+        └── images/           # Extracted images
+            ├── image_1.png
+            └── image_2.jpg
+```
+
+**Configuration** (`.env`):
+```bash
+PDF_USE_GPU=True           # Enable GPU acceleration
+PDF_GPU_ID=0               # GPU device ID (default: 0)
+```
 
 ### Query Enhancement (HyDE)
 

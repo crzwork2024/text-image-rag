@@ -26,6 +26,11 @@ class Config:
     IMAGE_DIR = BASE_DIR / "images"
     DEBUG_EXPORT_PATH = BASE_DIR / "vector_ingest.json"
     LOG_DIR = BASE_DIR / "logs"
+    
+    # PDF Conversion Config
+    PDF_OUTPUT_DIR = BASE_DIR / "pdf_output"  # MinerU output directory
+    PDF_USE_GPU = os.getenv("PDF_USE_GPU", "True").lower() == "true"  # GPU acceleration
+    PDF_GPU_ID = int(os.getenv("PDF_GPU_ID", "0"))  # GPU device ID
 
     # ==================== Local Embedding Model Config ====================
     LOCAL_MODEL_PATH = os.getenv(
@@ -150,6 +155,7 @@ class Config:
             cls.CHROMA_PATH,
             cls.IMAGE_DIR,
             cls.LOG_DIR,
+            cls.PDF_OUTPUT_DIR,
         ]
 
         for directory in directories:
