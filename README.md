@@ -8,17 +8,26 @@
 
 ## 📖 Table of Contents
 
-- [Introduction](#introduction)
-- [Key Features](#key-features)
-- [System Architecture](#system-architecture)
-- [Quick Start](#quick-start)
-- [Feature Details](#feature-details)
-  - [Query Enhancement (HyDE)](#query-enhancement-hyde)
-  - [Adaptive Thresholds](#adaptive-thresholds)
-  - [Semantic Caching](#semantic-caching)
-- [Configuration](#configuration)
-- [API Documentation](#api-documentation)
-- [Tech Stack](#tech-stack)
+- [🤖 RAG Intelligent Q\&A System](#-rag-intelligent-qa-system)
+  - [📖 Table of Contents](#-table-of-contents)
+  - [Introduction](#introduction)
+  - [✨ Key Features](#-key-features)
+  - [System Architecture](#system-architecture)
+    - [Project Structure](#project-structure)
+  - [Quick Start](#quick-start)
+    - [Prerequisites](#prerequisites)
+    - [Installation](#installation)
+  - [Feature Details](#feature-details)
+    - [PDF to Markdown Conversion](#pdf-to-markdown-conversion)
+    - [Query Enhancement (HyDE)](#query-enhancement-hyde)
+    - [Adaptive Thresholds](#adaptive-thresholds)
+    - [Semantic Caching](#semantic-caching)
+  - [Configuration](#configuration)
+  - [API Documentation](#api-documentation)
+    - [Query Endpoint](#query-endpoint)
+    - [Health Check](#health-check)
+  - [Tech Stack](#tech-stack)
+  - [License](#license)
 
 ## Introduction
 
@@ -42,15 +51,15 @@ The RAG Intelligent Q&A System is a robust solution combining advanced Vector Re
 ```mermaid
 graph TD
     User[User / Web UI] --> API[FastAPI Gateway]
-    
+
     subgraph "Core Logic"
-        API --> Cache[Semantic Cache (Redis)]
-        API --> HyDE[Query Enhancer (HyDE)]
-        API --> VectorDB[Vector Search (ChromaDB)]
+        API --> Cache["Semantic Cache (Redis)"]
+        API --> HyDE["Query Enhancer (HyDE)"]
+        API --> VectorDB["Vector Search (ChromaDB)"]
         API --> Reranker[Rerank Engine]
         API --> LLM[LLM Client]
     end
-    
+
     subgraph "Data Flow"
         Cache -- Hit --> API
         HyDE -- Keywords --> VectorDB
@@ -58,7 +67,7 @@ graph TD
         Reranker -- Top K Docs --> LLM
         LLM -- Answer --> API
     end
-    
+
     subgraph "Ingestion Pipeline"
         Doc[Markdown Document] --> Processor[Document Processor]
         Processor --> Splitter[Parent-Child Splitter]
@@ -141,7 +150,7 @@ rag_project/
    Place your model in `models/acge_text_embedding` or configure `LOCAL_EMBEDDING_MODEL_PATH` in `.env`.
 
 6. **Prepare Data**
-   
+
    **Option A: Use Existing Markdown**
    Place your `book.md` in the project root.
 
